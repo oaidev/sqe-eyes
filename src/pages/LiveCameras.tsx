@@ -4,12 +4,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Camera, MonitorPlay } from 'lucide-react';
+import { Camera, MonitorPlay, ScanSearch } from 'lucide-react';
+import { SimulateCameraDialog } from '@/components/cameras/SimulateCameraDialog';
 
 export default function LiveCameras() {
   const [zoneFilter, setZoneFilter] = useState<string>('all');
-
+  const [simulateOpen, setSimulateOpen] = useState(false);
   const { data: cameras = [] } = useQuery({
     queryKey: ['cameras'],
     queryFn: async () => {
@@ -51,6 +53,12 @@ export default function LiveCameras() {
             </SelectContent>
           </Select>
           <span className="text-sm text-muted-foreground">{filtered.length} kamera</span>
+          <div className="ml-auto">
+            <Button onClick={() => setSimulateOpen(true)} size="sm" className="gap-1.5">
+              <ScanSearch className="h-4 w-4" />
+              Simulasi Deteksi
+            </Button>
+          </div>
         </div>
 
         {filtered.length === 0 ? (
@@ -84,6 +92,7 @@ export default function LiveCameras() {
           </div>
         )}
       </div>
+      <SimulateCameraDialog open={simulateOpen} onOpenChange={setSimulateOpen} />
     </AppLayout>
   );
 }
