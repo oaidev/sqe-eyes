@@ -55,6 +55,13 @@ export function SimulateCameraDialog({ open, onOpenChange }: SimulateCameraDialo
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Fix race condition: attach stream after video element renders
+  useEffect(() => {
+    if (webcamActive && webcamVideoRef.current && webcamStreamRef.current) {
+      webcamVideoRef.current.srcObject = webcamStreamRef.current;
+    }
+  }, [webcamActive]);
+
   const { data: cameras = [] } = useQuery({
     queryKey: ['cameras'],
     queryFn: async () => {
