@@ -1,55 +1,88 @@
 
 
-# Fix: Deteksi APD Kosong & Alert Tidak Terhubung
+# Analisis End-to-End & Rencana User Management + RBAC
 
-## Analisis Masalah
+## Status Fitur Saat Ini
 
-1. **PPE results selalu kosong `{}`** — Dari database, semua event terbaru punya `ppe_results: {}`. Kode PPE detection ada (line 174-203) tapi silent-fail di catch block. Kemungkinan besar gagal karena `PPE_MAP` hanya punya 3 item (FACE_COVER, HEAD_COVER, HAND_COVER) padahal zone rules juga butuh SAFETY_SHOES dan REFLECTIVE_VEST. Selain itu, AWS `DetectProtectiveEquipment` hanya support 3 type tersebut — SAFETY_SHOES dan REFLECTIVE_VEST **bukan** type yang didukung AWS Rekognition, jadi perlu di-map dari body part analysis.
+| Fitur | Status | Catatan |
+|-------|--------|---------|
+| Auth (Login/Register) | ✅ Berfungsi | Login, register, logout bekerja |
+| Dashboard | ✅ Berfungsi | Statistik real-time |
+| Kelola Pekerja | ✅ Berfungsi | CRUD + CSV import + face enrollment |
+| Zona & Kamera | ✅ Berfungsi | CRUD zona dan kamera |
+| Aturan APD | ✅ Berfungsi | Matriks toggle per zona |
+| Aturan Akses | ✅ Berfungsi | CRUD aturan akses zona |
+| Live Kamera | ✅ Berfungsi | Grid kamera + simulasi deteksi |
+| Event Terkini | ✅ Berfungsi | Realtime + detail APD |
+| Inbox Alert | ✅ Berfungsi | Filter, teruskan, catatan |
+| Validasi Alert | ✅ Berfungsi | Form validasi supervisor |
+| Izin Keluar | ✅ Berfungsi | Buat + approve/reject |
+| Laporan Kepatuhan | ✅ Berfungsi | Chart bar + pie |
+| Rekap Pelanggaran | ✅ Berfungsi | Group by worker |
+| Ekspor Laporan | ⚠️ Parsial | Hanya insert record, tidak generate file |
+| **Kelola Pengguna** | ❌ Tidak ada | Tidak ada halaman user management |
+| **CRUD Role** | ❌ Tidak ada | Tidak ada UI assign/ubah/hapus role |
+| **Route Protection** | ❌ Tidak ada | Semua halaman bisa diakses via URL langsung |
+| **Permission per Menu** | ❌ Tidak ada | Sidebar filter saja, halaman tidak cek role |
 
-2. **Alert logic terlalu sederhana** — Saat ini hanya cek `ppeViolation` (any PPE not detected) atau `isUnknown`. Tidak membandingkan dengan **aturan PPE zona** (`zone_ppe_rules`). Seharusnya: ambil aturan PPE dari zona kamera → bandingkan dengan hasil deteksi → buat alert hanya jika item yang **wajib** tidak terdeteksi.
+## Yang Perlu Dibangun
 
-3. **Response `alert_type` tidak dikirim ke UI** — Edge function sudah return `alert_created: true` tapi tidak mengirim `alert_type`. UI sudah handle field ini tapi tidak ditampilkan secara informatif.
+### 1. Halaman "Kelola Pengguna" (`/users`)
+Halaman admin-only untuk:
+- **Daftar semua user** — email, nama, role, status (dari `profiles` + `user_roles`)
+- **Invite user baru** — form email + role, panggil `supabase.auth.admin.inviteUserByEmail()` via edge function (karena admin API tidak bisa dipanggil dari client)
+- **Ubah role** — dropdown ganti role (admin/operator/supervisor/safety_manager)
+- **Hapus user** — soft-delete atau remove dari sistem via edge function
+- **Tampilkan user tanpa role** — highlight user yang belum di-assign role
 
-## Perbaikan
+### 2. Edge Function `manage-users`
+Diperlukan karena operasi admin (invite, delete user, list users) membutuhkan `service_role_key`:
+- `POST /invite` — invite user by email + assign role
+- `POST /update-role` — update role user
+- `POST /delete-user` — delete user dari auth + cleanup
+- `GET /list` — list semua user dengan profile & role
 
-### 1. Edge Function `detect-event/index.ts`
+### 3. Role-Based Route Protection
+Saat ini sidebar menyembunyikan menu, tapi user bisa ketik URL langsung dan tetap masuk. Perlu:
+- Komponen `<ProtectedRoute roles={['admin']}>` yang wrap halaman
+- Redirect ke dashboard jika role tidak sesuai
+- Tambahkan di setiap route di `App.tsx`
 
-**a. Perbaiki PPE detection & mapping:**
-- Tambah logging di catch block PPE agar error tidak hilang
-- AWS Rekognition `DetectProtectiveEquipment` hanya mendeteksi HEAD_COVER, FACE_COVER, HAND_COVER — untuk SAFETY_SHOES dan REFLECTIVE_VEST, parse dari `BodyParts` analysis (feet/body coverage)
-- Update PPE_MAP untuk include semua 5 item yang dipakai di zone rules
+### 4. Permission Granular per Menu (View/Edit/Delete)
+Definisi permission matrix di kode:
 
-**b. Tambah validasi terhadap aturan zona:**
-- Setelah PPE detection, query `zone_ppe_rules` berdasarkan `zone_id` dari kamera
-- Jika worker teridentifikasi dan punya jabatan, filter rules by jabatan juga
-- Bandingkan required items vs detected items → tentukan violations
-
-**c. Perbaiki alert creation:**
-- Buat alert dengan detail violations di `notes` field
-- Kirim `alert_type` dan detail violations di response
-- Tambah `alert_type` ke response JSON
-
-### 2. UI `SimulateCameraDialog.tsx`
-
-- Tampilkan `alert_type` di hasil deteksi (sudah ada tapi perlu dipastikan terhubung)
-- Tampilkan detail violation (item APD mana yang tidak sesuai aturan zona)
-
-## Detail Teknis
-
-### Perubahan di Edge Function
-
+```text
+Menu                  | admin | operator | supervisor | safety_manager
+──────────────────────|───────|──────────|────────────|───────────────
+Dashboard             | view  | view     | view       | view
+Kelola Pekerja        | full  | —        | —          | —
+Zona & Kamera         | full  | —        | —          | —
+Aturan APD            | full  | —        | —          | —
+Aturan Akses          | full  | —        | —          | —
+Kelola Pengguna       | full  | —        | —          | —
+Live Kamera           | full  | view     | —          | —
+Event Terkini         | full  | view     | —          | —
+Inbox Alert           | full  | edit     | —          | —
+Validasi Alert        | full  | —        | edit       | —
+Izin Keluar           | full  | —        | edit       | —
+Laporan Kepatuhan     | view  | —        | —          | view
+Rekap Pelanggaran     | view  | —        | —          | view
+Ekspor Laporan        | full  | —        | —          | edit
 ```
-// Setelah PPE detection, query zone rules:
-1. Ambil zone_id dari camera
-2. Query zone_ppe_rules WHERE zone_id = camera.zone_id
-3. Untuk setiap required PPE item:
-   - Jika item ada di ppeResults dan detected=true → OK
-   - Jika item TIDAK ada di ppeResults atau detected=false → VIOLATION
-4. Buat array violations
-5. Jika violations.length > 0 → create alert APD_VIOLATION dengan notes berisi detail
-```
 
-### File yang diubah
-- `supabase/functions/detect-event/index.ts` — tambah zone PPE rule validation, perbaiki alert logic, tambah alert_type di response
-- `src/components/cameras/SimulateCameraDialog.tsx` — tampilkan alert_type dan violation details di panel hasil
+### File yang Diubah/Dibuat
+
+1. **`supabase/functions/manage-users/index.ts`** — Edge function baru untuk admin user operations
+2. **`src/pages/Users.tsx`** — Halaman baru kelola pengguna
+3. **`src/components/layout/ProtectedRoute.tsx`** — Komponen route guard
+4. **`src/App.tsx`** — Tambah route `/users` + wrap semua route dengan ProtectedRoute
+5. **`src/components/layout/AppSidebar.tsx`** — Tambah menu "Kelola Pengguna"
+6. **`src/lib/permissions.ts`** — Permission matrix & helper `canAccess(role, page, action)`
+7. **Database migration** — Update RLS policy pada `profiles` agar admin bisa lihat semua profile
+
+### Alur Invite User
+1. Admin buka `/users` → klik "Invite User"
+2. Isi email + pilih role → panggil edge function `manage-users/invite`
+3. Edge function: `supabase.auth.admin.inviteUserByEmail()` + insert ke `user_roles`
+4. User terima email → klik link → set password → login dengan role yang sudah di-assign
 
