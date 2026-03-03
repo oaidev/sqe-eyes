@@ -10,9 +10,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Search, Upload, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Search, Upload, Pencil, Trash2, Loader2, Camera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { EnrollFaceDialog } from '@/components/workers/EnrollFaceDialog';
 
 type Worker = Tables<'workers'>;
 
@@ -36,6 +37,7 @@ export default function Workers() {
   const [deleteDialog, setDeleteDialog] = useState<Worker | null>(null);
   const [editing, setEditing] = useState<Worker | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [enrollWorker, setEnrollWorker] = useState<Worker | null>(null);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['workers'],
@@ -185,6 +187,7 @@ export default function Workers() {
                     <TableCell><Badge variant={ENROLLMENT_LABELS[w.enrollment_status]?.variant || 'secondary'}>{ENROLLMENT_LABELS[w.enrollment_status]?.label || w.enrollment_status}</Badge></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Daftarkan Wajah" onClick={() => setEnrollWorker(w)}><Camera className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
@@ -243,6 +246,9 @@ export default function Workers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Enroll Face Dialog */}
+      <EnrollFaceDialog worker={enrollWorker} open={!!enrollWorker} onOpenChange={(v) => !v && setEnrollWorker(null)} />
     </AppLayout>
   );
 }
