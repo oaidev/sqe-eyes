@@ -1,35 +1,35 @@
 
-# Phase 6: Edge Functions & AWS Rekognition Integration
 
-## Status
-**Phase 6 is COMPLETE.** All 6 phases are now fully implemented.
+# Simulasi Kamera: Webcam, Upload Gambar & Upload Video
 
-## What was built
+Menambahkan dialog simulasi deteksi di halaman Live Cameras dengan 3 mode input untuk testing pipeline AWS Rekognition.
 
-### 6.1 Edge Function: `enroll-worker` ✅
-- Accepts worker ID + photo URLs
-- Calls AWS Rekognition `IndexFaces` API with AWS Signature V4 signing
-- Stores `FaceId` and quality score in `worker_face_embeddings` table
-- Updates worker `enrollment_status` (ENROLLING → ENROLLED/FAILED)
-- Collection auto-created as `sqe-eyes-workers`
+---
 
-### 6.2 Edge Function: `detect-event` ✅
-- Accepts camera frame (image URL or base64) + camera ID
-- Calls `SearchFacesByImage` to identify worker from collection
-- Calls `DetectProtectiveEquipment` for PPE compliance check
-- Creates `events` record with detected worker, event type, PPE results, confidence
-- Auto-creates `alerts` for violations (APD_VIOLATION, UNKNOWN_PERSON)
+## Komponen Baru: `src/components/cameras/SimulateCameraDialog.tsx`
 
-### 6.3 Storage Bucket: `worker-photos` ✅
-- Public bucket for face enrollment images
-- RLS policies for authenticated upload, public read, admin delete/update
+### 3 Tab Input
+1. **Webcam** — Stream webcam via `getUserMedia`, tombol "Capture & Detect" mengambil frame via `<canvas>` → base64 → kirim ke `detect-event`
+2. **Upload Gambar** — Input file (JPG/PNG), convert ke base64 → kirim ke `detect-event`
+3. **Upload Video** — Input file (MP4/WebM), play di `<video>` element, tombol "Capture Frame" untuk ambil frame dari video pada posisi saat ini via `<canvas>` → base64 → kirim ke `detect-event`. Juga ada mode **auto-capture** setiap N detik selama video diputar
 
-### 6.4 Frontend Integration ✅
-- Camera icon button on Workers table to trigger enrollment
-- `EnrollFaceDialog` component: upload up to 3 photos, progress bar, results display
-- Shows existing face embeddings with quality scores
+### Fitur Tambahan
+- Dropdown pilih `camera_id` dari tabel cameras (untuk asosiasi zona & aturan PPE)
+- Auto-capture toggle (interval 3-10 detik) untuk webcam & video
+- Panel hasil deteksi: worker teridentifikasi, status APD, confidence, alert created
+- Riwayat 5 deteksi terakhir dalam mini-feed
 
-### AWS Secrets Configured ✅
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_REGION`
+## Perubahan di `src/pages/LiveCameras.tsx`
+- Tambah tombol "Simulasi Deteksi" di header yang membuka dialog
+
+## Alur Deteksi (semua mode sama)
+1. Ambil frame → base64
+2. `supabase.functions.invoke('detect-event', { body: { camera_id, image_base64 } })`
+3. Tampilkan hasil (worker, PPE, event type, alert)
+4. Data otomatis masuk ke halaman Events & Alerts via realtime
+
+## Detail Teknis
+- Video upload menggunakan `<video>` + `<canvas>` untuk extract frame — tidak perlu backend processing
+- Tidak ada library tambahan, semua pakai browser API native
+- Maksimal ukuran video: dibatasi di UI (50MB warning)
+
