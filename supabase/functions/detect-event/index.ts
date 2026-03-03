@@ -160,6 +160,17 @@ Deno.serve(async (req) => {
       }
     } catch (_) { /* face search failed, continue with unknown */ }
 
+    // Fetch worker details if identified
+    let workerInfo: { nama: string; sid: string } | null = null;
+    if (workerId) {
+      const { data: w } = await supabase
+        .from("workers")
+        .select("nama, sid")
+        .eq("id", workerId)
+        .single();
+      if (w) workerInfo = w;
+    }
+
     // 2. DetectProtectiveEquipment for PPE check
     const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
 
@@ -229,6 +240,7 @@ Deno.serve(async (req) => {
         success: true,
         event_id: eventRecord.id,
         worker_id: workerId,
+        worker: workerInfo,
         event_type: detectedEventType,
         confidence_score: confidenceScore,
         ppe_results: ppeResults,
