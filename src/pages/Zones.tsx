@@ -1,0 +1,241 @@
+import { useState } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { Plus, Pencil, Trash2, Loader2, ChevronDown, Camera, MapPin } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import type { Tables } from '@/integrations/supabase/types';
+
+type Zone = Tables<'zones'>;
+type CameraRow = Tables<'cameras'>;
+
+const POINT_TYPES: Array<'entry' | 'exit' | 'area'> = ['entry', 'exit', 'area'];
+
+export default function Zones() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [zoneDialog, setZoneDialog] = useState(false);
+  const [editingZone, setEditingZone] = useState<Zone | null>(null);
+  const [zoneForm, setZoneForm] = useState({ name: '', description: '' });
+  const [camDialog, setCamDialog] = useState(false);
+  const [editingCam, setEditingCam] = useState<CameraRow | null>(null);
+  const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; point_type: 'entry' | 'exit' | 'area'; zone_id: string }>({ name: '', rtsp_url: '', point_type: 'area', zone_id: '' });
+  const [deleteZone, setDeleteZone] = useState<Zone | null>(null);
+  const [deleteCam, setDeleteCam] = useState<CameraRow | null>(null);
+
+  const { data: sites = [] } = useQuery({
+    queryKey: ['sites'],
+    queryFn: async () => {
+      const { data } = await supabase.from('sites').select('*').eq('is_active', true);
+      return data || [];
+    },
+  });
+  const siteId = sites[0]?.id || '';
+
+  const { data: zones = [], isLoading } = useQuery({
+    queryKey: ['zones'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('zones').select('*').order('name');
+      if (error) throw error;
+      return data as Zone[];
+    },
+  });
+
+  const { data: cameras = [] } = useQuery({
+    queryKey: ['cameras'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cameras').select('*').order('name');
+      if (error) throw error;
+      return data as CameraRow[];
+    },
+  });
+
+  const saveZoneMut = useMutation({
+    mutationFn: async () => {
+      if (editingZone) {
+        const { error } = await supabase.from('zones').update({ name: zoneForm.name, description: zoneForm.description }).eq('id', editingZone.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('zones').insert({ name: zoneForm.name, description: zoneForm.description, site_id: siteId });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones'] }); setZoneDialog(false); setEditingZone(null); toast({ title: 'Zona disimpan' }); },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
+  const deleteZoneMut = useMutation({
+    mutationFn: async (id: string) => { const { error } = await supabase.from('zones').delete().eq('id', id); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones'] }); setDeleteZone(null); toast({ title: 'Zona dihapus' }); },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
+  const saveCamMut = useMutation({
+    mutationFn: async () => {
+      if (editingCam) {
+        const { error } = await supabase.from('cameras').update({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type }).eq('id', editingCam.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('cameras').insert({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type, zone_id: camForm.zone_id });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); setCamDialog(false); setEditingCam(null); toast({ title: 'Kamera disimpan' }); },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
+  const deleteCamMut = useMutation({
+    mutationFn: async (id: string) => { const { error } = await supabase.from('cameras').delete().eq('id', id); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); setDeleteCam(null); toast({ title: 'Kamera dihapus' }); },
+    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+  });
+
+  const toggleCam = useMutation({
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      const { error } = await supabase.from('cameras').update({ is_active: active }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cameras'] }),
+  });
+
+  return (
+    <AppLayout title="Zona & Kamera">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">{zones.length} zona terdaftar</p>
+          <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '' }); setZoneDialog(true); }}>
+            <Plus className="mr-1 h-4 w-4" />Tambah Zona
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : zones.map(zone => {
+          const zoneCams = cameras.filter(c => c.zone_id === zone.id);
+          return (
+            <Collapsible key={zone.id}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <div className="flex cursor-pointer items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <MapPin className="h-4 w-4 text-primary" />
+                      <div>
+                        <p className="font-medium">{zone.name}</p>
+                        {zone.description && <p className="text-xs text-muted-foreground">{zone.description}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline"><Camera className="mr-1 h-3 w-3" />{zoneCams.length}</Badge>
+                      <Badge variant={zone.is_active ? 'default' : 'secondary'}>{zone.is_active ? 'Aktif' : 'Nonaktif'}</Badge>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '' }); setZoneDialog(true); }}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={e => { e.stopPropagation(); setDeleteZone(zone); }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="border-t px-4 pb-4 pt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase">Kamera di zona ini</p>
+                      <Button variant="outline" size="sm" onClick={() => { setEditingCam(null); setCamForm({ name: '', rtsp_url: '', point_type: 'area', zone_id: zone.id }); setCamDialog(true); }}>
+                        <Plus className="mr-1 h-3 w-3" />Tambah Kamera
+                      </Button>
+                    </div>
+                    {zoneCams.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-2">Belum ada kamera</p>
+                    ) : (
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Tipe</TableHead><TableHead>Aktif</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
+                        <TableBody>
+                          {zoneCams.map(cam => (
+                            <TableRow key={cam.id}>
+                              <TableCell className="font-medium">{cam.name}</TableCell>
+                              <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
+                              <TableCell><Badge variant="outline" className="capitalize">{cam.point_type}</Badge></TableCell>
+                              <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingCam(cam); setCamForm({ name: cam.name, rtsp_url: cam.rtsp_url || '', point_type: cam.point_type, zone_id: cam.zone_id }); setCamDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          );
+        })}
+      </div>
+
+      {/* Zone Dialog */}
+      <Dialog open={zoneDialog} onOpenChange={setZoneDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{editingZone ? 'Edit Zona' : 'Tambah Zona'}</DialogTitle><DialogDescription>Kelola informasi zona.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Nama Zona</Label><Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Deskripsi</Label><Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
+            <Button onClick={() => saveZoneMut.mutate()} disabled={saveZoneMut.isPending || !zoneForm.name}>Simpan</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Camera Dialog */}
+      <Dialog open={camDialog} onOpenChange={setCamDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola informasi kamera.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Nama Kamera</Label><Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>RTSP URL</Label><Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." /></div>
+            <div className="grid gap-2">
+              <Label>Tipe</Label>
+              <Select value={camForm.point_type} onValueChange={v => setCamForm({ ...camForm, point_type: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{POINT_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCamDialog(false)}>Batal</Button>
+            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name}>Simpan</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Zone */}
+      <Dialog open={!!deleteZone} onOpenChange={() => setDeleteZone(null)}>
+        <DialogContent><DialogHeader><DialogTitle>Hapus Zona</DialogTitle><DialogDescription>Yakin hapus zona <strong>{deleteZone?.name}</strong>?</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteZone(null)}>Batal</Button><Button variant="destructive" onClick={() => deleteZone && deleteZoneMut.mutate(deleteZone.id)}>Hapus</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Camera */}
+      <Dialog open={!!deleteCam} onOpenChange={() => setDeleteCam(null)}>
+        <DialogContent><DialogHeader><DialogTitle>Hapus Kamera</DialogTitle><DialogDescription>Yakin hapus kamera <strong>{deleteCam?.name}</strong>?</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteCam(null)}>Batal</Button><Button variant="destructive" onClick={() => deleteCam && deleteCamMut.mutate(deleteCam.id)}>Hapus</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppLayout>
+  );
+}
