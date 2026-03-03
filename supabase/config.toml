@@ -1,1 +1,7 @@
 project_id = "cvtyvszmbwydoquczcda"
+
+[functions.enroll-worker]
+verify_jwt = false
+
+[functions.detect-event]
+verify_jwt = false
