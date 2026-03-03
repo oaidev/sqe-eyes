@@ -1,102 +1,49 @@
 
 
-# SQE Eyes — Safety Monitoring Web App
-### PT Bukit Makmur Mandiri Utama (Berau Coal, Indonesia)
+# Plan: Assign Admin Role + Build Phase 2 (Admin System)
 
-A full-stack AI CCTV analytics app for workshop safety monitoring with face recognition & PPE detection.
+## Step 0: Assign Admin Role
+- Insert `admin` role for user `farid.pamuji@smma.id` (ID: `9770dd33-a7e8-4941-9f07-ae2406f62f8b`) into `user_roles` table.
 
----
+## Step 1: Dashboard — Connect to Real Data
+- Update `Index.tsx` to fetch real counts from database (workers, zones, cameras, events today, alerts baru) instead of hardcoded values.
 
-## Phase 1: Foundation & Database Setup
-- Set up Lovable Cloud (Supabase) with all core tables: **sites, zones, cameras, workers, worker_face_embeddings, zone_ppe_rules, zone_access_rules, events, alerts, supervisor_validations, exit_permits, compliance_aggregates, report_exports**
-- Create user roles system (admin, operator, supervisor, safety_manager)
-- Auth setup with login page (clean & light design theme)
-- App shell: sidebar navigation, role-based menu, light/clean UI with blue accent colors
-- Generate 5 dummy records per table (PT Bukit Makmur Mandiri Utama context: Site LMO Berau, zones like Workshop Bigshop, Workshop LCC, Office Area, Fuel Station, Parking Area)
+## Step 2: Worker Management Page (`/workers`)
+- Full CRUD table page: list all workers with columns (SID, Nama, Jabatan, Departemen, Shift, Status, Enrollment)
+- Add/Edit worker dialog form
+- Delete worker confirmation
+- Enrollment status badge (Terdaftar / Belum Didaftarkan)
+- CSV import button (parse CSV and bulk insert)
+- Search and filter by departemen/shift
 
-## Phase 2: Role 1 — Admin System (Configuration)
+## Step 3: Zone & Camera Management Page (`/zones`)
+- List zones with site assignment and camera count
+- Add/Edit zone dialog
+- Expandable row showing cameras per zone
+- Add/Edit camera dialog (name, RTSP URL, point_type: entry/exit/area)
+- Camera active/inactive toggle
 
-### 2.1 Worker Management
-- CRUD page for workers (nama, SID format SID-2024-XXX, jabatan, departemen, shift, foto, status aktif)
-- Import from CSV support
-- Enrollment badge status indicator (Terdaftar / Belum Didaftarkan)
+## Step 4: PPE Rules Page (`/ppe-rules`)
+- Visual matrix: zones as rows, PPE items as columns (HEAD_COVER, HAND_COVER, FACE_COVER, safety_shoes, reflective_vest)
+- Toggle required/not-required per cell
+- Optional jabatan filter
+- Auto-save on toggle
 
-### 2.2 Face Enrollment
-- Upload 3-5 photos per worker interface
-- Integration-ready with AWS Rekognition (Edge Function `enroll-worker`)
-- Quality score display & enrollment status tracking
+## Step 5: Access Rules Page (`/access-rules`)
+- Table listing access rules per zone
+- Add/Edit rule dialog: select zone, worker or jabatan, shift, time window (time_start, time_end)
+- Active/inactive toggle
+- Filter by zone
 
-### 2.3 Zone & Camera Management
-- CRUD zones with site assignment
-- Camera management per zone (name, RTSP URL, point_type: entry/exit/area)
-- Visual zone overview with camera count indicators
-
-### 2.4 PPE Rules per Zone
-- Configure required PPE items per zone & position (HEAD_COVER, HAND_COVER, FACE_COVER, safety_shoes, reflective_vest)
-- Visual matrix of zone × PPE requirements
-
-### 2.5 Zone Access Rules
-- Define who can be in which zone and when (by worker or position)
-- Shift-based time window configuration
-
-## Phase 3: Role 2 — Security Operator (Control Room)
-
-### 3.1 Live Multi-Camera View
-- Grid view of all cameras per zone with simulated feed thumbnails
-- AI overlay indicators (bounding box style display for detected workers)
-
-### 3.2 Real-Time Event Feed
-- Live scrolling list of today's detection events
-- Worker photo, name, SID, time, position, event type (MASUK=green, KELUAR=orange, UNKNOWN=red)
-- APD status badges (Lengkap / Perlu Perhatian)
-
-### 3.3 Event Detail & Video Playback
-- Click-to-expand detail panel: personal info, timestamp, camera, zone, PPE results breakdown, snapshot/clip viewer
-
-### 3.4 Alert Inbox
-- Filtered view: Unauthorized Exit, APD Violation, Unknown Person
-- Alert status tracking: Baru → Diteruskan → Selesai
-- Forward-to-supervisor action
-
-## Phase 4: Role 3 — Supervisor
-
-### 4.1 Alert Validation Inbox
-- List of forwarded alerts with snapshot preview, worker info, camera, timestamp
-
-### 4.2 Validation Form
-- Status: Valid / Tidak Valid
-- Fields: Alasan Keluar, APD manual check, Komentar
-- Submit updates alert status to resolved
-
-### 4.3 Exit Permit Approval
-- Pending permit requests list
-- Approve/Reject with time window (valid_from, valid_until)
-- Active permits overview
-
-## Phase 5: Role 4 — Safety Manager / HR (Reporting)
-
-### 5.1 Weekly Compliance Dashboard
-- Charts: violations per day/week, breakdown by type (Unauthorized Exit vs APD Violation)
-- Worker violation ranking
-- PPE compliance per item (which PPE is most often missing)
-
-### 5.2 Worker Violation Recap
-- Drill-down per worker: full violation history with filters
-- Shows violation type, zone, confidence score, supervisor validation status
-
-### 5.3 Weekly Report Export
-- Generate PDF/Excel for selected period
-- Summary + detail per worker + trend charts
-- Export history tracking
-
-## Phase 6: Edge Functions & AWS Integration
-- Edge Function `enroll-worker`: sends photos to AWS Rekognition Face Collection
-- Edge Function `detect-event`: processes camera frames for face recognition + PPE detection, creates events & alerts
-- Secrets management for AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
+## Step 6: Routes & Navigation
+- Add routes for `/workers`, `/zones`, `/ppe-rules`, `/access-rules` in `App.tsx`
+- All wrapped in `AppLayout` with appropriate titles
 
 ---
 
-**Design:** Light & clean theme, professional blue accents, Indonesian language labels where appropriate, responsive layout optimized for control room monitors and desktop use.
-
-**Dummy Data:** 5 realistic records per entity based on PT Bukit Makmur Mandiri Utama coal mining operations in Berau, Kalimantan Timur.
+**Technical notes:**
+- All pages use `@tanstack/react-query` for data fetching with `supabase` client
+- RLS is already configured: admin role can manage all tables, others can only view
+- Existing UI components (Table, Card, Dialog, Form, Badge, etc.) will be reused
+- Indonesian language labels throughout
 
