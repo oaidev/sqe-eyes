@@ -24,6 +24,8 @@ interface DetectionResult {
   ppe_results: Record<string, { detected: boolean; confidence: number }>;
   alert_created: boolean;
   alert_type?: string;
+  violations: string[];
+  zone_rules_applied: boolean;
 }
 
 interface SimulateCameraDialogProps {
@@ -142,6 +144,8 @@ export function SimulateCameraDialog({ open, onOpenChange }: SimulateCameraDialo
         ppe_results: data.ppe_results || {},
         alert_created: !!data.alert_id,
         alert_type: data.alert_type,
+        violations: data.violations || [],
+        zone_rules_applied: data.zone_rules_applied || false,
       };
 
       setResults(prev => [result, ...prev].slice(0, 5));
@@ -405,11 +409,29 @@ export function SimulateCameraDialog({ open, onOpenChange }: SimulateCameraDialo
                           </div>
                         )}
 
-                        {/* Alert */}
+                        {/* Alert & Violations */}
                         {r.alert_created && (
-                          <div className="flex items-center gap-1 text-destructive">
-                            <AlertTriangle className="h-3 w-3" />
-                            <span className="text-[10px] font-medium">Peringatan terdeteksi</span>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-destructive">
+                              <AlertTriangle className="h-3 w-3" />
+                              <span className="text-[10px] font-medium">
+                                {r.alert_type === 'APD_VIOLATION' ? 'Pelanggaran APD' : 
+                                 r.alert_type === 'UNKNOWN_PERSON' ? 'Orang Tidak Dikenal' :
+                                 r.alert_type === 'UNAUTHORIZED_EXIT' ? 'Keluar Tanpa Izin' :
+                                 'Peringatan'}
+                              </span>
+                            </div>
+                            {r.violations.length > 0 && (
+                              <p className="text-[9px] text-muted-foreground ml-4">
+                                Tidak terdeteksi: {r.violations.join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {r.zone_rules_applied && !r.alert_created && (
+                          <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                            <ShieldCheck className="h-3 w-3" />
+                            <span className="text-[10px]">APD sesuai aturan zona</span>
                           </div>
                         )}
                       </CardContent>

@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── AWS Signature V4 helpers (same as enroll-worker) ───────────────────────
+// ─── AWS Signature V4 helpers ───────────────────────────────────────────────
 
 function toHex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -70,7 +70,7 @@ async function signRequest(
   return headers;
 }
 
-// ─── PPE item mapping ───────────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -82,10 +82,25 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+// AWS Rekognition only supports these 3 equipment types natively
 const PPE_MAP: Record<string, string> = {
   FACE_COVER: "FACE_COVER",
   HEAD_COVER: "HEAD_COVER",
   HAND_COVER: "HAND_COVER",
+};
+
+// Body part name mapping for inferring non-native PPE items
+const BODY_PART_PPE_INFERENCE: Record<string, string> = {
+  // If person detected with body parts visible, we infer these
+  // AWS doesn't detect shoes/vests natively, so we use body part coverage heuristics
+};
+
+const PPE_LABEL: Record<string, string> = {
+  HEAD_COVER: "Helm",
+  HAND_COVER: "Sarung Tangan",
+  FACE_COVER: "Masker",
+  SAFETY_SHOES: "Sepatu Safety",
+  REFLECTIVE_VEST: "Rompi Reflektif",
 };
 
 // ─── Main handler ───────────────────────────────────────────────────────────
@@ -96,7 +111,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // This endpoint can be called by camera pipeline (service-to-service) or authenticated user
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -115,6 +129,19 @@ Deno.serve(async (req) => {
     const collectionId = "sqe-eyes-workers";
     const endpoint = `https://rekognition.${region}.amazonaws.com`;
 
+    // Get camera info including zone_id
+    const { data: cameraInfo, error: camErr } = await supabase
+      .from("cameras")
+      .select("zone_id, point_type")
+      .eq("id", camera_id)
+      .single();
+
+    if (camErr || !cameraInfo) {
+      return new Response(JSON.stringify({ error: "Camera not found" }), {
+        status: 404, headers: corsHeaders,
+      });
+    }
+
     // Get image bytes
     let imageBytes: Uint8Array;
     if (image_base64) {
@@ -128,7 +155,9 @@ Deno.serve(async (req) => {
 
     const imageB64 = uint8ToBase64(imageBytes);
 
+    // ──────────────────────────────────────────────────────────────────────
     // 1. SearchFacesByImage to identify worker
+    // ──────────────────────────────────────────────────────────────────────
     let workerId: string | null = null;
     let confidenceScore: number | null = null;
 
@@ -148,7 +177,6 @@ Deno.serve(async (req) => {
         confidenceScore = match.Similarity / 100;
         const faceId = match.Face.FaceId;
 
-        // Look up worker by face_id
         const { data: embedding } = await supabase
           .from("worker_face_embeddings")
           .select("worker_id")
@@ -158,20 +186,24 @@ Deno.serve(async (req) => {
 
         if (embedding) workerId = embedding.worker_id;
       }
-    } catch (_) { /* face search failed, continue with unknown */ }
+    } catch (err) {
+      console.error("Face search failed:", err);
+    }
 
     // Fetch worker details if identified
-    let workerInfo: { nama: string; sid: string } | null = null;
+    let workerInfo: { nama: string; sid: string; jabatan: string } | null = null;
     if (workerId) {
       const { data: w } = await supabase
         .from("workers")
-        .select("nama, sid")
+        .select("nama, sid, jabatan")
         .eq("id", workerId)
         .single();
       if (w) workerInfo = w;
     }
 
+    // ──────────────────────────────────────────────────────────────────────
     // 2. DetectProtectiveEquipment for PPE check
+    // ──────────────────────────────────────────────────────────────────────
     const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
 
     try {
@@ -186,6 +218,8 @@ Deno.serve(async (req) => {
       const ppeRes = await fetch(endpoint, { method: "POST", headers: ppeHeaders, body: ppeBody });
       const ppeData = await ppeRes.json();
 
+      console.log("PPE raw response:", JSON.stringify(ppeData).slice(0, 500));
+
       if (ppeData.Persons?.length > 0) {
         const person = ppeData.Persons[0];
         for (const bp of person.BodyParts || []) {
@@ -199,13 +233,85 @@ Deno.serve(async (req) => {
             }
           }
         }
+
+        // For items AWS can't detect natively (SAFETY_SHOES, REFLECTIVE_VEST),
+        // we mark them as "not detected" so zone rule validation can flag them.
+        // In production, a custom model or additional CV pipeline would detect these.
+        // For now, if the zone requires them, they'll show as violations unless
+        // we find them in the body parts analysis.
+
+        // Check if any body part hints at vest/shoes coverage
+        let hasBodyCovering = false;
+        let hasFootCovering = false;
+        for (const bp of person.BodyParts || []) {
+          if (bp.Name === "LEFT_HAND" || bp.Name === "RIGHT_HAND") {
+            // hands already handled above
+          }
+          // AWS doesn't provide foot/torso equipment — we can only infer absence
+        }
+
+        // Only add SAFETY_SHOES / REFLECTIVE_VEST to ppeResults if zone actually requires them
+        // (done below in zone rule validation step)
       }
-    } catch (_) { /* PPE detection failed */ }
+    } catch (err) {
+      console.error("PPE detection failed:", err);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 3. Query zone PPE rules and validate
+    // ──────────────────────────────────────────────────────────────────────
+    const violations: string[] = [];
+    let zoneRulesApplied = false;
+
+    try {
+      // Get required PPE for this zone
+      let query = supabase
+        .from("zone_ppe_rules")
+        .select("ppe_item, is_required, jabatan")
+        .eq("zone_id", cameraInfo.zone_id)
+        .eq("is_required", true);
+
+      const { data: zoneRules, error: rulesErr } = await query;
+
+      if (!rulesErr && zoneRules && zoneRules.length > 0) {
+        zoneRulesApplied = true;
+
+        // Filter rules by jabatan if worker is identified
+        const applicableRules = zoneRules.filter((rule) => {
+          // Rule applies to all if jabatan is null
+          if (!rule.jabatan) return true;
+          // Rule applies to specific jabatan
+          if (workerInfo && rule.jabatan === workerInfo.jabatan) return true;
+          // If worker unknown, apply all rules
+          if (!workerInfo) return true;
+          return false;
+        });
+
+        // Get unique required PPE items
+        const requiredItems = [...new Set(applicableRules.map((r) => r.ppe_item))];
+
+        for (const item of requiredItems) {
+          const result = ppeResults[item];
+          if (!result) {
+            // Item not detected at all by AWS (or not supported like SAFETY_SHOES)
+            ppeResults[item] = { detected: false, confidence: 0 };
+            violations.push(PPE_LABEL[item] || item);
+          } else if (!result.detected) {
+            // Item detected but not covering body part
+            violations.push(PPE_LABEL[item] || item);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Zone PPE rules query failed:", err);
+    }
 
     // Determine event type
     const detectedEventType = event_type || (workerId ? "MASUK" : "UNKNOWN");
 
-    // 3. Create event record
+    // ──────────────────────────────────────────────────────────────────────
+    // 4. Create event record
+    // ──────────────────────────────────────────────────────────────────────
     const { data: eventRecord, error: eventError } = await supabase
       .from("events")
       .insert({
@@ -221,18 +327,72 @@ Deno.serve(async (req) => {
 
     if (eventError) throw eventError;
 
-    // 4. Check for violations and create alert if needed
+    // ──────────────────────────────────────────────────────────────────────
+    // 5. Create alerts based on violations
+    // ──────────────────────────────────────────────────────────────────────
+    let alertId: string | null = null;
+    let alertType: string | null = null;
     let alertCreated = false;
-    const ppeViolation = Object.values(ppeResults).some((r) => !r.detected);
+
     const isUnknown = !workerId;
 
-    if (ppeViolation || isUnknown) {
-      const alertType = isUnknown ? "UNKNOWN_PERSON" : "APD_VIOLATION";
-      await supabase.from("alerts").insert({
-        event_id: eventRecord.id,
-        alert_type: alertType,
-      });
+    if (isUnknown) {
+      // Unknown person alert
+      alertType = "UNKNOWN_PERSON";
+      const { data: alert } = await supabase
+        .from("alerts")
+        .insert({
+          event_id: eventRecord.id,
+          alert_type: "UNKNOWN_PERSON",
+          notes: "Orang tidak dikenal terdeteksi di area kerja.",
+        })
+        .select("id")
+        .single();
+      if (alert) alertId = alert.id;
       alertCreated = true;
+    } else if (violations.length > 0) {
+      // APD violation alert with specific details
+      alertType = "APD_VIOLATION";
+      const violationNotes = `Pelanggaran APD: ${violations.join(", ")} tidak terdeteksi/tidak sesuai.`;
+      const { data: alert } = await supabase
+        .from("alerts")
+        .insert({
+          event_id: eventRecord.id,
+          alert_type: "APD_VIOLATION",
+          notes: violationNotes,
+        })
+        .select("id")
+        .single();
+      if (alert) alertId = alert.id;
+      alertCreated = true;
+    }
+
+    // Check unauthorized exit
+    if (workerId && detectedEventType === "KELUAR" && cameraInfo.point_type === "exit") {
+      // Check if worker has valid exit permit
+      const { data: permits } = await supabase
+        .from("exit_permits")
+        .select("id")
+        .eq("worker_id", workerId)
+        .eq("status", "APPROVED")
+        .gte("valid_until", new Date().toISOString())
+        .lte("valid_from", new Date().toISOString())
+        .limit(1);
+
+      if (!permits || permits.length === 0) {
+        alertType = "UNAUTHORIZED_EXIT";
+        const { data: alert } = await supabase
+          .from("alerts")
+          .insert({
+            event_id: eventRecord.id,
+            alert_type: "UNAUTHORIZED_EXIT",
+            notes: `${workerInfo?.nama || "Pekerja"} mencoba keluar tanpa izin yang valid.`,
+          })
+          .select("id")
+          .single();
+        if (alert) alertId = alert.id;
+        alertCreated = true;
+      }
     }
 
     return new Response(
@@ -240,15 +400,20 @@ Deno.serve(async (req) => {
         success: true,
         event_id: eventRecord.id,
         worker_id: workerId,
-        worker: workerInfo,
+        worker: workerInfo ? { nama: workerInfo.nama, sid: workerInfo.sid } : null,
         event_type: detectedEventType,
         confidence_score: confidenceScore,
         ppe_results: ppeResults,
         alert_created: alertCreated,
+        alert_id: alertId,
+        alert_type: alertType,
+        violations,
+        zone_rules_applied: zoneRulesApplied,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
+    console.error("detect-event error:", e);
     return new Response(JSON.stringify({ error: e.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
