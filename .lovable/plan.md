@@ -1,35 +1,55 @@
 
 
-# Fix: Worker Tidak Dikenal & Webcam Tidak Muncul
+# Fix: Deteksi APD Kosong & Alert Tidak Terhubung
 
-## Masalah 1: Worker selalu "Tidak Dikenal"
-Edge function `detect-event` mengembalikan `worker_id` saja (UUID), tapi **tidak mengembalikan objek `worker`** dengan `nama` dan `sid`. UI mengecek `data.worker` yang selalu `undefined`.
+## Analisis Masalah
 
-**Perbaikan:** Setelah `workerId` ditemukan (line ~159), query tabel `workers` untuk ambil `nama` dan `sid`, lalu tambahkan ke response.
+1. **PPE results selalu kosong `{}`** — Dari database, semua event terbaru punya `ppe_results: {}`. Kode PPE detection ada (line 174-203) tapi silent-fail di catch block. Kemungkinan besar gagal karena `PPE_MAP` hanya punya 3 item (FACE_COVER, HEAD_COVER, HAND_COVER) padahal zone rules juga butuh SAFETY_SHOES dan REFLECTIVE_VEST. Selain itu, AWS `DetectProtectiveEquipment` hanya support 3 type tersebut — SAFETY_SHOES dan REFLECTIVE_VEST **bukan** type yang didukung AWS Rekognition, jadi perlu di-map dari body part analysis.
 
-File: `supabase/functions/detect-event/index.ts`
-- Setelah line 159, tambah query: `supabase.from("workers").select("nama, sid").eq("id", workerId).single()`
-- Di response (line 228), tambah field `worker: workerInfo`
+2. **Alert logic terlalu sederhana** — Saat ini hanya cek `ppeViolation` (any PPE not detected) atau `isUnknown`. Tidak membandingkan dengan **aturan PPE zona** (`zone_ppe_rules`). Seharusnya: ambil aturan PPE dari zona kamera → bandingkan dengan hasil deteksi → buat alert hanya jika item yang **wajib** tidak terdeteksi.
 
-## Masalah 2: Webcam tidak muncul di live view
-Race condition — `setWebcamActive(true)` dipanggil **sebelum** video element di-render. Saat `startWebcam` dijalankan, `webcamVideoRef.current` mungkin sudah ada tapi stream belum di-attach karena timing React render.
+3. **Response `alert_type` tidak dikirim ke UI** — Edge function sudah return `alert_created: true` tapi tidak mengirim `alert_type`. UI sudah handle field ini tapi tidak ditampilkan secara informatif.
 
-Masalah sebenarnya: `srcObject` di-set saat `webcamVideoRef.current` ada, tapi jika React belum me-render ulang video element (karena `webcamActive` belum true saat assignment), stream hilang.
+## Perbaikan
 
-**Perbaikan:** Gunakan callback ref atau `useEffect` yang watch `webcamActive` untuk assign stream ke video element setelah render.
+### 1. Edge Function `detect-event/index.ts`
 
-File: `src/components/cameras/SimulateCameraDialog.tsx`
-- Tambah `useEffect` yang memantau `webcamActive`: ketika true dan stream ada, assign `srcObject` ke video ref
-- Ini memastikan stream di-attach **setelah** video element sudah di-render oleh React
+**a. Perbaiki PPE detection & mapping:**
+- Tambah logging di catch block PPE agar error tidak hilang
+- AWS Rekognition `DetectProtectiveEquipment` hanya mendeteksi HEAD_COVER, FACE_COVER, HAND_COVER — untuk SAFETY_SHOES dan REFLECTIVE_VEST, parse dari `BodyParts` analysis (feet/body coverage)
+- Update PPE_MAP untuk include semua 5 item yang dipakai di zone rules
 
-```typescript
-useEffect(() => {
-  if (webcamActive && webcamVideoRef.current && webcamStreamRef.current) {
-    webcamVideoRef.current.srcObject = webcamStreamRef.current;
-  }
-}, [webcamActive]);
+**b. Tambah validasi terhadap aturan zona:**
+- Setelah PPE detection, query `zone_ppe_rules` berdasarkan `zone_id` dari kamera
+- Jika worker teridentifikasi dan punya jabatan, filter rules by jabatan juga
+- Bandingkan required items vs detected items → tentukan violations
+
+**c. Perbaiki alert creation:**
+- Buat alert dengan detail violations di `notes` field
+- Kirim `alert_type` dan detail violations di response
+- Tambah `alert_type` ke response JSON
+
+### 2. UI `SimulateCameraDialog.tsx`
+
+- Tampilkan `alert_type` di hasil deteksi (sudah ada tapi perlu dipastikan terhubung)
+- Tampilkan detail violation (item APD mana yang tidak sesuai aturan zona)
+
+## Detail Teknis
+
+### Perubahan di Edge Function
+
+```
+// Setelah PPE detection, query zone rules:
+1. Ambil zone_id dari camera
+2. Query zone_ppe_rules WHERE zone_id = camera.zone_id
+3. Untuk setiap required PPE item:
+   - Jika item ada di ppeResults dan detected=true → OK
+   - Jika item TIDAK ada di ppeResults atau detected=false → VIOLATION
+4. Buat array violations
+5. Jika violations.length > 0 → create alert APD_VIOLATION dengan notes berisi detail
 ```
 
-## Masalah 3: Label teknis di UI
-Pastikan tidak ada referensi "AWS Rekognition" atau istilah teknis lain yang tampil ke user — sudah diperbaiki di pesan sebelumnya.
+### File yang diubah
+- `supabase/functions/detect-event/index.ts` — tambah zone PPE rule validation, perbaiki alert logic, tambah alert_type di response
+- `src/components/cameras/SimulateCameraDialog.tsx` — tampilkan alert_type dan violation details di panel hasil
 
