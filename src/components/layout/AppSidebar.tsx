@@ -60,6 +60,7 @@ const navItems: { group: string; items: NavItem[] }[] = [
       { title: 'Zona & Kamera', url: '/zones', icon: MapPin, roles: ['admin'] },
       { title: 'Aturan APD', url: '/ppe-rules', icon: ShieldCheck, roles: ['admin'] },
       { title: 'Aturan Akses', url: '/access-rules', icon: KeyRound, roles: ['admin'] },
+      { title: 'Kelola Pengguna', url: '/users', icon: Shield, roles: ['admin'] },
     ],
   },
   {
