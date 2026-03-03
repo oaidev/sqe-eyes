@@ -402,7 +402,7 @@ export function SimulateCameraDialog({ open, onOpenChange }: SimulateCameraDialo
                         {r.alert_created && (
                           <div className="flex items-center gap-1 text-destructive">
                             <AlertTriangle className="h-3 w-3" />
-                            <span className="text-[10px] font-medium">Alert: {r.alert_type}</span>
+                            <span className="text-[10px] font-medium">Peringatan terdeteksi</span>
                           </div>
                         )}
                       </CardContent>

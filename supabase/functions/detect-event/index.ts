@@ -72,6 +72,16 @@ async function signRequest(
 
 // ─── PPE item mapping ───────────────────────────────────────────────────────
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
 const PPE_MAP: Record<string, string> = {
   FACE_COVER: "FACE_COVER",
   HEAD_COVER: "HEAD_COVER",
@@ -116,7 +126,7 @@ Deno.serve(async (req) => {
       imageBytes = new Uint8Array(await imgRes.arrayBuffer());
     }
 
-    const imageB64 = btoa(String.fromCharCode(...imageBytes));
+    const imageB64 = uint8ToBase64(imageBytes);
 
     // 1. SearchFacesByImage to identify worker
     let workerId: string | null = null;
