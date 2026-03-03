@@ -157,7 +157,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
           <div className="space-y-2">
             <Progress value={progress} className="h-2" />
             <p className="text-xs text-muted-foreground text-center">
-              {progress < 50 ? 'Mengupload foto...' : progress < 90 ? 'Mendaftarkan wajah ke AWS Rekognition...' : 'Selesai!'}
+              {progress < 50 ? 'Mengupload foto...' : progress < 90 ? 'Memproses pendaftaran wajah...' : 'Selesai!'}
             </p>
           </div>
         )}

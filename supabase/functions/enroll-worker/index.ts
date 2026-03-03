@@ -70,6 +70,16 @@ async function signRequest(
   return headers;
 }
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
 // ─── Main handler ───────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -134,7 +144,7 @@ Deno.serve(async (req) => {
         // Call IndexFaces
         const indexBody = JSON.stringify({
           CollectionId: collectionId,
-          Image: { Bytes: btoa(String.fromCharCode(...imgBytes)) },
+          Image: { Bytes: uint8ToBase64(imgBytes) },
           ExternalImageId: worker_id,
           MaxFaces: 1,
           QualityFilter: "AUTO",
