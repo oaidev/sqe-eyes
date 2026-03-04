@@ -6,13 +6,19 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function generateTempPassword(length = 12): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#";
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, (b) => chars[b % chars.length]).join("");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Verify caller is admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -37,13 +43,11 @@ Deno.serve(async (req) => {
     }
     const callerId = claimsData.claims.sub;
 
-    // Use service role client for admin operations
     const adminClient = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check caller is admin
     const { data: isAdmin } = await adminClient.rpc("has_role", {
       _user_id: callerId,
       _role: "admin",
@@ -103,33 +107,32 @@ Deno.serve(async (req) => {
         if (!email || !role) {
           return new Response(
             JSON.stringify({ error: "email and role required" }),
-            {
-              status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        const { data: inviteData, error: inviteErr } =
-          await adminClient.auth.admin.inviteUserByEmail(email, {
-            data: { full_name: full_name || email },
-          });
-        if (inviteErr) throw inviteErr;
+        const tempPassword = generateTempPassword();
 
-        // Assign role
+        const { data: createData, error: createErr } =
+          await adminClient.auth.admin.createUser({
+            email,
+            password: tempPassword,
+            email_confirm: true,
+            user_metadata: { full_name: full_name || email },
+          });
+        if (createErr) throw createErr;
+
         const { error: roleErr } = await adminClient
           .from("user_roles")
           .upsert(
-            { user_id: inviteData.user.id, role },
+            { user_id: createData.user.id, role },
             { onConflict: "user_id" }
           );
         if (roleErr) throw roleErr;
 
         return new Response(
-          JSON.stringify({ success: true, user_id: inviteData.user.id }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ success: true, user_id: createData.user.id, temp_password: tempPassword }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -138,10 +141,7 @@ Deno.serve(async (req) => {
         if (!user_id || !role) {
           return new Response(
             JSON.stringify({ error: "user_id and role required" }),
-            {
-              status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
@@ -160,34 +160,20 @@ Deno.serve(async (req) => {
         if (!user_id) {
           return new Response(
             JSON.stringify({ error: "user_id required" }),
-            {
-              status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         if (user_id === callerId) {
           return new Response(
             JSON.stringify({ error: "Cannot delete yourself" }),
-            {
-              status: 400,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            }
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        // Delete role first, then profile, then auth user
-        await adminClient
-          .from("user_roles")
-          .delete()
-          .eq("user_id", user_id);
-        await adminClient
-          .from("profiles")
-          .delete()
-          .eq("id", user_id);
-        const { error: delErr } =
-          await adminClient.auth.admin.deleteUser(user_id);
+        await adminClient.from("user_roles").delete().eq("user_id", user_id);
+        await adminClient.from("profiles").delete().eq("id", user_id);
+        const { error: delErr } = await adminClient.auth.admin.deleteUser(user_id);
         if (delErr) throw delErr;
 
         return new Response(JSON.stringify({ success: true }), {
@@ -204,10 +190,7 @@ Deno.serve(async (req) => {
     console.error("manage-users error:", err);
     return new Response(
       JSON.stringify({ error: err.message || "Internal error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

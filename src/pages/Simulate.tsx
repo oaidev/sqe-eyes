@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
@@ -33,7 +31,6 @@ const ppeLabel: Record<string, string> = {
 };
 
 export default function Simulate() {
-  const [selectedCamera, setSelectedCamera] = useState<string>('');
   const [detecting, setDetecting] = useState(false);
   const [results, setResults] = useState<DetectionResult[]>([]);
   const [autoCapture, setAutoCapture] = useState(false);
@@ -58,15 +55,6 @@ export default function Simulate() {
       webcamVideoRef.current.srcObject = webcamStreamRef.current;
     }
   }, [webcamActive]);
-
-  const { data: cameras = [] } = useQuery({
-    queryKey: ['cameras'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cameras').select('id, name, zone_id, zones(name)').order('name');
-      if (error) throw error;
-      return data;
-    },
-  });
 
   const startWebcam = async () => {
     try {
@@ -103,11 +91,10 @@ export default function Simulate() {
   }, []);
 
   const runDetection = useCallback(async (imageBase64: string) => {
-    if (!selectedCamera) { toast.error('Pilih kamera terlebih dahulu'); return; }
     setDetecting(true);
     try {
       const { data, error } = await supabase.functions.invoke('detect-event', {
-        body: { camera_id: selectedCamera, image_base64: imageBase64 },
+        body: { image_base64: imageBase64 },
       });
       if (error) throw error;
       const result: DetectionResult = {
@@ -122,7 +109,7 @@ export default function Simulate() {
     } catch (err: any) {
       toast.error(`Deteksi gagal: ${err.message}`);
     } finally { setDetecting(false); }
-  }, [selectedCamera]);
+  }, []);
 
   const handleWebcamCapture = () => { if (!webcamVideoRef.current) return; const b = captureFrame(webcamVideoRef.current); if (b) runDetection(b); };
   const handleVideoCapture = () => { if (!videoRef.current) return; const b = captureFrame(videoRef.current); if (b) runDetection(b); };
@@ -157,21 +144,6 @@ export default function Simulate() {
       <div className="max-w-5xl mx-auto space-y-4">
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Camera selector */}
-        <div className="flex items-center gap-3">
-          <Label className="shrink-0">Kamera:</Label>
-          <Select value={selectedCamera} onValueChange={setSelectedCamera}>
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Pilih kamera" />
-            </SelectTrigger>
-            <SelectContent>
-              {cameras.map((c: any) => (
-                <SelectItem key={c.id} value={c.id}>{c.name} — {c.zones?.name || '?'}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="grid md:grid-cols-[1fr,320px] gap-4">
           {/* Left: input tabs */}
           <Tabs defaultValue="webcam" className="flex flex-col">
@@ -196,7 +168,7 @@ export default function Simulate() {
                   <Button onClick={startWebcam} size="sm">Mulai Webcam</Button>
                 ) : (
                   <>
-                    <Button onClick={handleWebcamCapture} size="sm" disabled={detecting || !selectedCamera}>
+                    <Button onClick={handleWebcamCapture} size="sm" disabled={detecting}>
                       {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capture & Detect'}
                     </Button>
                     <Button onClick={stopWebcam} size="sm" variant="outline">Stop</Button>
@@ -227,7 +199,7 @@ export default function Simulate() {
               <div className="flex items-center gap-2">
                 <Button onClick={() => imageInputRef.current?.click()} size="sm" variant="outline">Pilih Gambar</Button>
                 {uploadedImage && (
-                  <Button onClick={handleImageDetect} size="sm" disabled={detecting || !selectedCamera}>
+                  <Button onClick={handleImageDetect} size="sm" disabled={detecting}>
                     {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Detect'}
                   </Button>
                 )}
@@ -248,7 +220,7 @@ export default function Simulate() {
               <div className="flex items-center gap-2 flex-wrap">
                 <Button onClick={() => videoInputRef.current?.click()} size="sm" variant="outline">Pilih Video</Button>
                 {videoSrc && (
-                  <Button onClick={handleVideoCapture} size="sm" disabled={detecting || !selectedCamera}>
+                  <Button onClick={handleVideoCapture} size="sm" disabled={detecting}>
                     {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capture Frame & Detect'}
                   </Button>
                 )}

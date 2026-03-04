@@ -65,6 +65,9 @@ const Auth = () => {
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Masuk
               </Button>
+              <p className="text-center text-xs text-muted-foreground pt-1">
+                Lupa password? Silakan hubungi Admin.
+              </p>
             </form>
           </CardContent>
         </Card>
