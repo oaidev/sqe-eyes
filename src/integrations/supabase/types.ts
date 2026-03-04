@@ -298,6 +298,39 @@ export type Database = {
         }
         Relationships: []
       }
+      role_permissions: {
+        Row: {
+          can_delete: boolean
+          can_edit: boolean
+          can_view: boolean
+          created_at: string
+          id: string
+          page_key: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }
+        Insert: {
+          can_delete?: boolean
+          can_edit?: boolean
+          can_view?: boolean
+          created_at?: string
+          id?: string
+          page_key: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Update: {
+          can_delete?: boolean
+          can_edit?: boolean
+          can_view?: boolean
+          created_at?: string
+          id?: string
+          page_key?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sites: {
         Row: {
           created_at: string
@@ -331,6 +364,8 @@ export type Database = {
       supervisor_validations: {
         Row: {
           alasan_keluar: string | null
+          alasan_text: string | null
+          alasan_type: Database["public"]["Enums"]["alasan_type"] | null
           alert_id: string
           apd_manual_check: Json | null
           created_at: string
@@ -338,9 +373,12 @@ export type Database = {
           komentar: string | null
           status: Database["public"]["Enums"]["validation_status"]
           supervisor_id: string
+          validation_level: string | null
         }
         Insert: {
           alasan_keluar?: string | null
+          alasan_text?: string | null
+          alasan_type?: Database["public"]["Enums"]["alasan_type"] | null
           alert_id: string
           apd_manual_check?: Json | null
           created_at?: string
@@ -348,9 +386,12 @@ export type Database = {
           komentar?: string | null
           status: Database["public"]["Enums"]["validation_status"]
           supervisor_id: string
+          validation_level?: string | null
         }
         Update: {
           alasan_keluar?: string | null
+          alasan_text?: string | null
+          alasan_type?: Database["public"]["Enums"]["alasan_type"] | null
           alert_id?: string
           apd_manual_check?: Json | null
           created_at?: string
@@ -358,6 +399,7 @@ export type Database = {
           komentar?: string | null
           status?: Database["public"]["Enums"]["validation_status"]
           supervisor_id?: string
+          validation_level?: string | null
         }
         Relationships: [
           {
@@ -517,6 +559,7 @@ export type Database = {
       }
       zone_ppe_rules: {
         Row: {
+          camera_id: string | null
           created_at: string
           id: string
           is_required: boolean
@@ -525,6 +568,7 @@ export type Database = {
           zone_id: string
         }
         Insert: {
+          camera_id?: string | null
           created_at?: string
           id?: string
           is_required?: boolean
@@ -533,6 +577,7 @@ export type Database = {
           zone_id: string
         }
         Update: {
+          camera_id?: string | null
           created_at?: string
           id?: string
           is_required?: boolean
@@ -541,6 +586,13 @@ export type Database = {
           zone_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "zone_ppe_rules_camera_id_fkey"
+            columns: ["camera_id"]
+            isOneToOne: false
+            referencedRelation: "cameras"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "zone_ppe_rules_zone_id_fkey"
             columns: ["zone_id"]
@@ -557,6 +609,9 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          shift: string | null
+          shift_end: string | null
+          shift_start: string | null
           site_id: string
           updated_at: string
         }
@@ -566,6 +621,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          shift?: string | null
+          shift_end?: string | null
+          shift_start?: string | null
           site_id: string
           updated_at?: string
         }
@@ -575,6 +633,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          shift?: string | null
+          shift_end?: string | null
+          shift_start?: string | null
           site_id?: string
           updated_at?: string
         }
@@ -606,6 +667,7 @@ export type Database = {
       }
     }
     Enums: {
+      alasan_type: "APD_TIDAK_LENGKAP" | "SUDAH_IZIN" | "LAINNYA"
       alert_status: "BARU" | "DITERUSKAN" | "SELESAI"
       alert_type: "UNAUTHORIZED_EXIT" | "APD_VIOLATION" | "UNKNOWN_PERSON"
       app_role: "admin" | "operator" | "supervisor" | "safety_manager"
@@ -619,6 +681,7 @@ export type Database = {
         | "FACE_COVER"
         | "SAFETY_SHOES"
         | "REFLECTIVE_VEST"
+        | "SAFETY_GLASSES"
       validation_status: "VALID" | "TIDAK_VALID"
       worker_shift: "day" | "night" | "rotating"
     }
@@ -748,6 +811,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      alasan_type: ["APD_TIDAK_LENGKAP", "SUDAH_IZIN", "LAINNYA"],
       alert_status: ["BARU", "DITERUSKAN", "SELESAI"],
       alert_type: ["UNAUTHORIZED_EXIT", "APD_VIOLATION", "UNKNOWN_PERSON"],
       app_role: ["admin", "operator", "supervisor", "safety_manager"],
@@ -761,6 +825,7 @@ export const Constants = {
         "FACE_COVER",
         "SAFETY_SHOES",
         "REFLECTIVE_VEST",
+        "SAFETY_GLASSES",
       ],
       validation_status: ["VALID", "TIDAK_VALID"],
       worker_shift: ["day", "night", "rotating"],
