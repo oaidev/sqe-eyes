@@ -67,9 +67,12 @@ export function AppSidebar() {
   const initials = user?.email?.substring(0, 2).toUpperCase() || 'U';
 
   return (
-    <Sidebar className="border-r-0">
+    <Sidebar className="border-r">
       <SidebarHeader className="p-4">
-        <img src="https://i.ibb.co.com/0SsvMtL/logo-PROXIS-3x-1.png" alt="PROXIS" className="h-7 w-auto" />
+        <div>
+          <h2 className="text-lg font-bold text-primary tracking-tight">COSMOS</h2>
+          <p className="text-[10px] text-sidebar-foreground/60 leading-tight">Computer Vision for Mining Operation & Safety</p>
+        </div>
       </SidebarHeader>
 
       <SidebarContent>
