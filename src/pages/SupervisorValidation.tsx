@@ -73,7 +73,7 @@ export default function SupervisorValidation() {
   const [finalStatus, setFinalStatus] = useState<'VALID' | 'TIDAK_VALID'>('VALID');
   const [alasanType, setAlasanType] = useState('APD_TIDAK_LENGKAP');
   const [alasanText, setAlasanText] = useState('');
-  const [reviseSid, setReviseSid] = useState('');
+  const [reviseSid, setReviseSid] = useState('__none__');
 
   const { data: operatorValidations = [] } = useQuery({
     queryKey: ['all-validations'],
@@ -159,8 +159,7 @@ export default function SupervisorValidation() {
     if (!alert) return '-';
     const sup = supValidationMap[alert.id];
     if (sup) return sup.status;
-    const op = opValidationMap[alert.id];
-    return op?.status || 'BARU';
+    return 'BELUM';
   };
 
   const alasanOptions = finalStatus === 'VALID' ? ALASAN_VALID : ALASAN_TIDAK_VALID;
@@ -171,7 +170,7 @@ export default function SupervisorValidation() {
       const alert = selectedEvent.alerts?.[0];
       if (!alert) throw new Error('Tidak ada alert');
 
-      if (reviseSid) {
+      if (reviseSid && reviseSid !== '__none__') {
         await supabase.from('events').update({ worker_id: reviseSid } as any).eq('id', selectedEvent.id);
       }
 
@@ -198,6 +197,7 @@ export default function SupervisorValidation() {
     switch (status) {
       case 'VALID': return <Badge variant="destructive">Valid</Badge>;
       case 'TIDAK_VALID': return <Badge variant="outline">Tidak Valid</Badge>;
+      case 'BELUM': return <Badge variant="secondary">Belum</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
   };
@@ -290,7 +290,7 @@ export default function SupervisorValidation() {
                   const alert = e.alerts?.[0];
                   const opVal = alert ? opValidationMap[alert.id] : null;
                   return (
-                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setFinalStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid(''); }}>
+                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setFinalStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid('__none__'); }}>
                       <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
                       <TableCell className="font-medium text-sm">
                         {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
@@ -377,7 +377,7 @@ export default function SupervisorValidation() {
                     <Select value={reviseSid} onValueChange={setReviseSid}>
                       <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tidak ada revisi</SelectItem>
+                        <SelectItem value="__none__">Tidak ada revisi</SelectItem>
                         {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
                       </SelectContent>
                     </Select>
