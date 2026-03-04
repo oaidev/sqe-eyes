@@ -58,9 +58,12 @@ export type Database = {
       cameras: {
         Row: {
           created_at: string
+          detection_models: string[] | null
           id: string
           is_active: boolean
           name: string
+          off_time_end: string | null
+          off_time_start: string | null
           point_type: Database["public"]["Enums"]["camera_point_type"]
           rtsp_url: string | null
           updated_at: string
@@ -68,9 +71,12 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          detection_models?: string[] | null
           id?: string
           is_active?: boolean
           name: string
+          off_time_end?: string | null
+          off_time_start?: string | null
           point_type?: Database["public"]["Enums"]["camera_point_type"]
           rtsp_url?: string | null
           updated_at?: string
@@ -78,9 +84,12 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          detection_models?: string[] | null
           id?: string
           is_active?: boolean
           name?: string
+          off_time_end?: string | null
+          off_time_start?: string | null
           point_type?: Database["public"]["Enums"]["camera_point_type"]
           rtsp_url?: string | null
           updated_at?: string
