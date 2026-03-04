@@ -1,6 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
-import logo from '@/assets/logo.png';
+
+const LOGO_URL = 'https://i.ibb.co.com/0SsvMtL/logo-PROXIS-3x-1.png';
 
 const NotFound = () => {
   const location = useLocation();
@@ -11,7 +12,7 @@ const NotFound = () => {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-4">
-      <img src={logo} alt="COSMOS" className="h-16 w-auto" />
+      <img src={LOGO_URL} alt="PROXIS" className="h-10 w-auto" />
       <div className="text-center">
         <h1 className="mb-2 text-5xl font-bold text-foreground">404</h1>
         <p className="mb-6 text-lg text-muted-foreground">Halaman tidak ditemukan</p>
