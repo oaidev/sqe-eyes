@@ -69,10 +69,7 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r-0">
       <SidebarHeader className="p-4">
-        <div className="flex flex-col">
-          <h2 className="text-sm font-bold text-sidebar-foreground">COSMOS</h2>
-          <p className="text-[10px] text-sidebar-foreground/60">Computer Vision for Mining Operation & Safety</p>
-        </div>
+        <img src="https://i.ibb.co.com/0SsvMtL/logo-PROXIS-3x-1.png" alt="PROXIS" className="h-7 w-auto" />
       </SidebarHeader>
 
       <SidebarContent>
