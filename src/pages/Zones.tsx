@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,7 +20,6 @@ import type { Tables } from '@/integrations/supabase/types';
 type Zone = Tables<'zones'>;
 type CameraRow = Tables<'cameras'>;
 
-const POINT_TYPES: Array<'entry' | 'exit' | 'area'> = ['entry', 'exit', 'area'];
 const PPE_ITEMS = [
   { key: 'HEAD_COVER', label: 'Helm' },
   { key: 'HAND_COVER', label: 'Sarung Tangan' },
@@ -29,6 +29,11 @@ const PPE_ITEMS = [
 ];
 const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
 
+const DETECTION_MODELS = [
+  { key: 'apd', label: 'Deteksi APD' },
+  { key: 'face', label: 'Deteksi Wajah' },
+];
+
 interface PpeMatrix { [key: string]: boolean }
 interface JabatanPpe { jabatan: string; ppe: PpeMatrix }
 
@@ -37,14 +42,13 @@ export default function Zones() {
   const qc = useQueryClient();
   const [zoneDialog, setZoneDialog] = useState(false);
   const [editingZone, setEditingZone] = useState<Zone | null>(null);
-  const [zoneForm, setZoneForm] = useState({ name: '', description: '', shift: 'day', shift_start: '07:00', shift_end: '17:00' });
+  const [zoneForm, setZoneForm] = useState({ name: '', description: '' });
   const [camDialog, setCamDialog] = useState(false);
   const [editingCam, setEditingCam] = useState<CameraRow | null>(null);
-  const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; point_type: 'entry' | 'exit' | 'area'; zone_id: string }>({ name: '', rtsp_url: '', point_type: 'area', zone_id: '' });
+  const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; point_type: 'exit' | 'area'; zone_id: string; off_time_start: string; off_time_end: string; detection_models: string[] }>({ name: '', rtsp_url: '', point_type: 'area', zone_id: '', off_time_start: '', off_time_end: '', detection_models: [] });
   const [deleteZone, setDeleteZone] = useState<Zone | null>(null);
   const [deleteCam, setDeleteCam] = useState<CameraRow | null>(null);
 
-  // APD matrix state for camera dialog
   const [generalPpe, setGeneralPpe] = useState<PpeMatrix>({});
   const [perJabatanEnabled, setPerJabatanEnabled] = useState(false);
   const [jabatanPpeList, setJabatanPpeList] = useState<JabatanPpe[]>([]);
@@ -73,10 +77,10 @@ export default function Zones() {
   const saveZoneMut = useMutation({
     mutationFn: async () => {
       if (editingZone) {
-        const { error } = await supabase.from('zones').update({ name: zoneForm.name, description: zoneForm.description, shift: zoneForm.shift, shift_start: zoneForm.shift_start, shift_end: zoneForm.shift_end } as any).eq('id', editingZone.id);
+        const { error } = await supabase.from('zones').update({ name: zoneForm.name, description: zoneForm.description }).eq('id', editingZone.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('zones').insert({ name: zoneForm.name, description: zoneForm.description, site_id: siteId, shift: zoneForm.shift, shift_start: zoneForm.shift_start, shift_end: zoneForm.shift_end } as any);
+        const { error } = await supabase.from('zones').insert({ name: zoneForm.name, description: zoneForm.description, site_id: siteId });
         if (error) throw error;
       }
     },
@@ -93,29 +97,25 @@ export default function Zones() {
   const saveCamMut = useMutation({
     mutationFn: async () => {
       let camId = editingCam?.id;
+      const camPayload: any = { name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type, off_time_start: camForm.off_time_start || null, off_time_end: camForm.off_time_end || null, detection_models: camForm.detection_models };
       if (editingCam) {
-        const { error } = await supabase.from('cameras').update({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type }).eq('id', editingCam.id);
+        const { error } = await supabase.from('cameras').update(camPayload).eq('id', editingCam.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from('cameras').insert({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type, zone_id: camForm.zone_id }).select('id').single();
+        const { data, error } = await supabase.from('cameras').insert({ ...camPayload, zone_id: camForm.zone_id }).select('id').single();
         if (error) throw error;
         camId = data.id;
       }
-      // Save PPE rules for this camera
       if (camId) {
         await (supabase.from('zone_ppe_rules').delete() as any).eq('camera_id', camId);
         const rules: any[] = [];
         PPE_ITEMS.forEach(item => {
-          if (generalPpe[item.key]) {
-            rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
-          }
+          if (generalPpe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
         });
         if (perJabatanEnabled) {
           jabatanPpeList.forEach(jp => {
             PPE_ITEMS.forEach(item => {
-              if (jp.ppe[item.key]) {
-                rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: jp.jabatan });
-              }
+              if (jp.ppe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: jp.jabatan });
             });
           });
         }
@@ -145,18 +145,20 @@ export default function Zones() {
 
   const openCamDialog = (zone_id: string, cam?: CameraRow) => {
     setEditingCam(cam || null);
-    setCamForm({ name: cam?.name || '', rtsp_url: cam?.rtsp_url || '', point_type: cam?.point_type || 'area', zone_id });
-    // Load existing PPE rules for this camera
+    setCamForm({
+      name: cam?.name || '', rtsp_url: cam?.rtsp_url || '',
+      point_type: (cam?.point_type === 'exit' ? 'exit' : 'area') as any,
+      zone_id,
+      off_time_start: (cam as any)?.off_time_start || '',
+      off_time_end: (cam as any)?.off_time_end || '',
+      detection_models: (cam as any)?.detection_models || [],
+    });
     const camRules = ppeRules.filter((r: any) => r.camera_id === cam?.id);
     const gen: PpeMatrix = {};
     const jabMap = new Map<string, PpeMatrix>();
     camRules.forEach((r: any) => {
-      if (!r.jabatan) {
-        gen[r.ppe_item] = true;
-      } else {
-        if (!jabMap.has(r.jabatan)) jabMap.set(r.jabatan, {});
-        jabMap.get(r.jabatan)![r.ppe_item] = true;
-      }
+      if (!r.jabatan) gen[r.ppe_item] = true;
+      else { if (!jabMap.has(r.jabatan)) jabMap.set(r.jabatan, {}); jabMap.get(r.jabatan)![r.ppe_item] = true; }
     });
     setGeneralPpe(gen);
     setPerJabatanEnabled(jabMap.size > 0);
@@ -164,8 +166,15 @@ export default function Zones() {
     setCamDialog(true);
   };
 
-  const addJabatanPpe = () => {
-    setJabatanPpeList(prev => [...prev, { jabatan: '', ppe: {} }]);
+  const addJabatanPpe = () => setJabatanPpeList(prev => [...prev, { jabatan: '', ppe: {} }]);
+
+  const toggleModel = (key: string) => {
+    setCamForm(prev => ({
+      ...prev,
+      detection_models: prev.detection_models.includes(key)
+        ? prev.detection_models.filter(m => m !== key)
+        : [...prev.detection_models, key],
+    }));
   };
 
   return (
@@ -173,7 +182,7 @@ export default function Zones() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{zones.length} zona terdaftar</p>
-          <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '', shift: 'day', shift_start: '07:00', shift_end: '17:00' }); setZoneDialog(true); }}>
+          <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '' }); setZoneDialog(true); }}>
             <Plus className="mr-1 h-4 w-4" />Tambah Zona
           </Button>
         </div>
@@ -182,9 +191,6 @@ export default function Zones() {
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : zones.map(zone => {
           const zoneCams = cameras.filter(c => c.zone_id === zone.id);
-          const zoneShift = (zone as any).shift || 'day';
-          const zoneStart = (zone as any).shift_start || '07:00';
-          const zoneEnd = (zone as any).shift_end || '17:00';
           return (
             <Collapsible key={zone.id}>
               <Card>
@@ -194,12 +200,12 @@ export default function Zones() {
                       <MapPin className="h-4 w-4 text-primary" />
                       <div>
                         <p className="font-medium">{zone.name}</p>
-                        <p className="text-xs text-muted-foreground">{zone.description || ''} • Shift: {zoneShift === 'day' ? 'Day' : 'Night'} ({zoneStart}–{zoneEnd})</p>
+                        <p className="text-xs text-muted-foreground">{zone.description || ''}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant="outline"><Camera className="mr-1 h-3 w-3" />{zoneCams.length}</Badge>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '', shift: zoneShift, shift_start: zoneStart, shift_end: zoneEnd }); setZoneDialog(true); }}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '' }); setZoneDialog(true); }}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={e => { e.stopPropagation(); setDeleteZone(zone); }}>
@@ -221,26 +227,22 @@ export default function Zones() {
                       <p className="text-sm text-muted-foreground py-2">Belum ada kamera</p>
                     ) : (
                       <Table>
-                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Tipe</TableHead><TableHead>Aktif</TableHead><TableHead>APD</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Tipe</TableHead><TableHead>Aktif</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
                         <TableBody>
-                          {zoneCams.map(cam => {
-                            const camPpeCount = ppeRules.filter((r: any) => r.camera_id === cam.id && !r.jabatan).length;
-                            return (
-                              <TableRow key={cam.id}>
-                                <TableCell className="font-medium">{cam.name}</TableCell>
-                                <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
-                                <TableCell><Badge variant="outline" className="capitalize">{cam.point_type === 'entry' ? 'Masuk' : cam.point_type === 'exit' ? 'Keluar' : 'Area'}</Badge></TableCell>
-                                <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
-                                <TableCell><Badge variant="secondary">{camPpeCount} APD</Badge></TableCell>
-                                <TableCell>
-                                  <div className="flex gap-1">
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCamDialog(zone.id, cam)}><Pencil className="h-3.5 w-3.5" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
+                          {zoneCams.map(cam => (
+                            <TableRow key={cam.id}>
+                              <TableCell className="font-medium">{cam.name}</TableCell>
+                              <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
+                              <TableCell><Badge variant="outline" className="capitalize">{cam.point_type === 'exit' ? 'Keluar' : 'Area Kerja'}</Badge></TableCell>
+                              <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCamDialog(zone.id, cam)}><Pencil className="h-3.5 w-3.5" /></Button>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
                         </TableBody>
                       </Table>
                     )}
@@ -259,20 +261,6 @@ export default function Zones() {
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Nama Zona</Label><Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} /></div>
             <div className="grid gap-2"><Label>Deskripsi</Label><Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} /></div>
-            <div className="grid gap-2">
-              <Label>Shift</Label>
-              <Select value={zoneForm.shift} onValueChange={v => setZoneForm({ ...zoneForm, shift: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="day">Day</SelectItem>
-                  <SelectItem value="night">Night</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2"><Label>Waktu Mulai</Label><Input type="time" value={zoneForm.shift_start} onChange={e => setZoneForm({ ...zoneForm, shift_start: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>Waktu Selesai</Label><Input type="time" value={zoneForm.shift_end} onChange={e => setZoneForm({ ...zoneForm, shift_end: e.target.value })} /></div>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
@@ -281,7 +269,7 @@ export default function Zones() {
         </DialogContent>
       </Dialog>
 
-      {/* Camera Dialog with APD Matrix */}
+      {/* Camera Dialog */}
       <Dialog open={camDialog} onOpenChange={setCamDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan atur matrix APD.</DialogDescription></DialogHeader>
@@ -292,8 +280,33 @@ export default function Zones() {
               <Label>Tipe</Label>
               <Select value={camForm.point_type} onValueChange={v => setCamForm({ ...camForm, point_type: v as any })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{POINT_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t === 'entry' ? 'Masuk' : t === 'exit' ? 'Keluar' : 'Area'}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  <SelectItem value="area">Area Kerja</SelectItem>
+                  <SelectItem value="exit">Keluar</SelectItem>
+                </SelectContent>
               </Select>
+            </div>
+
+            {/* Off-time */}
+            <div className="border-t pt-3">
+              <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
+                <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+              </div>
+            </div>
+
+            {/* Detection Models */}
+            <div className="border-t pt-3">
+              <Label className="font-medium">Model Deteksi</Label>
+              <div className="grid gap-2 mt-2">
+                {DETECTION_MODELS.map(m => (
+                  <div key={m.key} className="flex items-center gap-2">
+                    <Checkbox checked={camForm.detection_models.includes(m.key)} onCheckedChange={() => toggleModel(m.key)} id={`model-${m.key}`} />
+                    <label htmlFor={`model-${m.key}`} className="text-sm cursor-pointer">{m.label}</label>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* APD Matrix */}
