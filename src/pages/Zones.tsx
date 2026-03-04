@@ -103,15 +103,13 @@ export default function Zones() {
       }
       // Save PPE rules for this camera
       if (camId) {
-        await supabase.from('zone_ppe_rules').delete().eq('camera_id' as any, camId);
+        await (supabase.from('zone_ppe_rules').delete() as any).eq('camera_id', camId);
         const rules: any[] = [];
-        // General PPE
         PPE_ITEMS.forEach(item => {
           if (generalPpe[item.key]) {
             rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
           }
         });
-        // Per jabatan PPE
         if (perJabatanEnabled) {
           jabatanPpeList.forEach(jp => {
             PPE_ITEMS.forEach(item => {

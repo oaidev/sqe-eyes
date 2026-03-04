@@ -65,14 +65,14 @@ export default function Roles() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const rows = Object.values(localPerms).map(p => ({
-        role: p.role,
+        role: p.role as any,
         page_key: p.page_key,
         can_view: p.can_view,
         can_edit: p.can_edit,
         can_delete: p.can_delete,
       }));
       for (const row of rows) {
-        const { error } = await supabase.from('role_permissions').upsert(row, { onConflict: 'role,page_key' });
+        const { error } = await supabase.from('role_permissions').upsert(row as any, { onConflict: 'role,page_key' });
         if (error) throw error;
       }
     },
