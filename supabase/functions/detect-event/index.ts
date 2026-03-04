@@ -82,9 +82,10 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-// AWS Rekognition only supports these 3 equipment types natively
+// AWS Rekognition PPE API supports FACE_COVER, HEAD_COVER, HAND_COVER
+// We remap FACE_COVER → SAFETY_GLASSES (kacamata/goggle detection)
 const PPE_MAP: Record<string, string> = {
-  FACE_COVER: "FACE_COVER",
+  FACE_COVER: "SAFETY_GLASSES",
   HEAD_COVER: "HEAD_COVER",
   HAND_COVER: "HAND_COVER",
 };
@@ -92,10 +93,14 @@ const PPE_MAP: Record<string, string> = {
 const PPE_LABEL: Record<string, string> = {
   HEAD_COVER: "Helm",
   HAND_COVER: "Sarung Tangan",
-  FACE_COVER: "Masker",
+  SAFETY_GLASSES: "Kacamata Safety",
   SAFETY_SHOES: "Sepatu Safety",
   REFLECTIVE_VEST: "Rompi Reflektif",
 };
+
+// Labels from DetectLabels API that map to our PPE items
+const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot"];
+const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket"];
 
 // ─── Main handler ───────────────────────────────────────────────────────────
 
