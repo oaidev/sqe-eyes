@@ -126,8 +126,8 @@ export default function OperatorValidation() {
 
   const getEventJenisPelanggaran = (event: EventRow) => {
     const alert = event.alerts?.[0];
-    if (!alert) return null;
-    return validationMap[alert.id]?.jenis_pelanggaran || null;
+    if (!alert) return event.cameras?.jenis_pelanggaran || null;
+    return validationMap[alert.id]?.jenis_pelanggaran || event.cameras?.jenis_pelanggaran || null;
   };
 
   const filtered = useMemo(() => {
