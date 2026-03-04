@@ -5,12 +5,12 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { UserPlus, Trash2, Shield, Loader2 } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Loader2, Copy, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 
@@ -50,6 +50,8 @@ export default function Users() {
   const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [editRole, setEditRole] = useState<AppRole>('operator');
+  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['manage-users'],
@@ -58,7 +60,12 @@ export default function Users() {
 
   const inviteMutation = useMutation({
     mutationFn: () => invokeManageUsers('invite', 'POST', { email: inviteEmail, role: inviteRole, full_name: inviteFullName || undefined }),
-    onSuccess: () => { toast({ title: 'Undangan terkirim' }); setInviteOpen(false); setInviteEmail(''); setInviteFullName(''); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
+    onSuccess: (data) => {
+      setInviteOpen(false);
+      setCreatedCredentials({ email: inviteEmail, password: data.temp_password });
+      setInviteEmail(''); setInviteFullName('');
+      queryClient.invalidateQueries({ queryKey: ['manage-users'] });
+    },
     onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
   });
 
@@ -77,6 +84,13 @@ export default function Users() {
   const roleBadgeVariant = (role: string | null) => {
     if (!role) return 'outline' as const;
     switch (role) { case 'admin': return 'destructive' as const; case 'operator': return 'default' as const; default: return 'secondary' as const; }
+  };
+
+  const handleCopyPassword = async () => {
+    if (!createdCredentials) return;
+    await navigator.clipboard.writeText(createdCredentials.password);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -119,6 +133,7 @@ export default function Users() {
         </Card>
       </div>
 
+      {/* Invite Dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Invite User Baru</DialogTitle></DialogHeader>
@@ -135,11 +150,40 @@ export default function Users() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Batal</Button>
-            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || inviteMutation.isPending}>{inviteMutation.isPending ? 'Mengirim...' : 'Kirim Undangan'}</Button>
+            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || inviteMutation.isPending}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Credentials Success Dialog */}
+      <Dialog open={!!createdCredentials} onOpenChange={() => { setCreatedCredentials(null); setCopied(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Akun Berhasil Dibuat</DialogTitle>
+            <DialogDescription>Berikan kredensial ini ke pengguna. Password hanya ditampilkan sekali.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Email</Label>
+              <p className="font-medium">{createdCredentials?.email}</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Password Sementara</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono tracking-wider">{createdCredentials?.password}</code>
+                <Button size="sm" variant="outline" onClick={handleCopyPassword}>
+                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { setCreatedCredentials(null); setCopied(false); }}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Role Dialog */}
       <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Ubah Role — {editingUser?.email}</DialogTitle></DialogHeader>
@@ -156,6 +200,7 @@ export default function Users() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirm */}
       <AlertDialog open={!!deleteUserId} onOpenChange={() => setDeleteUserId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>User akan dihapus permanen.</AlertDialogDescription></AlertDialogHeader>
