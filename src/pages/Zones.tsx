@@ -20,53 +20,63 @@ type Zone = Tables<'zones'>;
 type CameraRow = Tables<'cameras'>;
 
 const POINT_TYPES: Array<'entry' | 'exit' | 'area'> = ['entry', 'exit', 'area'];
+const PPE_ITEMS = [
+  { key: 'HEAD_COVER', label: 'Helm' },
+  { key: 'HAND_COVER', label: 'Sarung Tangan' },
+  { key: 'SAFETY_GLASSES', label: 'Kacamata Safety' },
+  { key: 'SAFETY_SHOES', label: 'Sepatu Safety' },
+  { key: 'REFLECTIVE_VEST', label: 'Rompi Reflektif' },
+];
+const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
+
+interface PpeMatrix { [key: string]: boolean }
+interface JabatanPpe { jabatan: string; ppe: PpeMatrix }
 
 export default function Zones() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [zoneDialog, setZoneDialog] = useState(false);
   const [editingZone, setEditingZone] = useState<Zone | null>(null);
-  const [zoneForm, setZoneForm] = useState({ name: '', description: '' });
+  const [zoneForm, setZoneForm] = useState({ name: '', description: '', shift: 'day', shift_start: '07:00', shift_end: '17:00' });
   const [camDialog, setCamDialog] = useState(false);
   const [editingCam, setEditingCam] = useState<CameraRow | null>(null);
   const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; point_type: 'entry' | 'exit' | 'area'; zone_id: string }>({ name: '', rtsp_url: '', point_type: 'area', zone_id: '' });
   const [deleteZone, setDeleteZone] = useState<Zone | null>(null);
   const [deleteCam, setDeleteCam] = useState<CameraRow | null>(null);
 
+  // APD matrix state for camera dialog
+  const [generalPpe, setGeneralPpe] = useState<PpeMatrix>({});
+  const [perJabatanEnabled, setPerJabatanEnabled] = useState(false);
+  const [jabatanPpeList, setJabatanPpeList] = useState<JabatanPpe[]>([]);
+
   const { data: sites = [] } = useQuery({
     queryKey: ['sites'],
-    queryFn: async () => {
-      const { data } = await supabase.from('sites').select('*').eq('is_active', true);
-      return data || [];
-    },
+    queryFn: async () => { const { data } = await supabase.from('sites').select('*').eq('is_active', true); return data || []; },
   });
   const siteId = sites[0]?.id || '';
 
   const { data: zones = [], isLoading } = useQuery({
     queryKey: ['zones'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('zones').select('*').order('name');
-      if (error) throw error;
-      return data as Zone[];
-    },
+    queryFn: async () => { const { data, error } = await supabase.from('zones').select('*').order('name'); if (error) throw error; return data as Zone[]; },
   });
 
   const { data: cameras = [] } = useQuery({
     queryKey: ['cameras'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cameras').select('*').order('name');
-      if (error) throw error;
-      return data as CameraRow[];
-    },
+    queryFn: async () => { const { data, error } = await supabase.from('cameras').select('*').order('name'); if (error) throw error; return data as CameraRow[]; },
+  });
+
+  const { data: ppeRules = [] } = useQuery({
+    queryKey: ['ppe-rules'],
+    queryFn: async () => { const { data } = await supabase.from('zone_ppe_rules').select('*'); return data || []; },
   });
 
   const saveZoneMut = useMutation({
     mutationFn: async () => {
       if (editingZone) {
-        const { error } = await supabase.from('zones').update({ name: zoneForm.name, description: zoneForm.description }).eq('id', editingZone.id);
+        const { error } = await supabase.from('zones').update({ name: zoneForm.name, description: zoneForm.description, shift: zoneForm.shift, shift_start: zoneForm.shift_start, shift_end: zoneForm.shift_end } as any).eq('id', editingZone.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('zones').insert({ name: zoneForm.name, description: zoneForm.description, site_id: siteId });
+        const { error } = await supabase.from('zones').insert({ name: zoneForm.name, description: zoneForm.description, site_id: siteId, shift: zoneForm.shift, shift_start: zoneForm.shift_start, shift_end: zoneForm.shift_end } as any);
         if (error) throw error;
       }
     },
@@ -82,15 +92,40 @@ export default function Zones() {
 
   const saveCamMut = useMutation({
     mutationFn: async () => {
+      let camId = editingCam?.id;
       if (editingCam) {
         const { error } = await supabase.from('cameras').update({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type }).eq('id', editingCam.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('cameras').insert({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type, zone_id: camForm.zone_id });
+        const { data, error } = await supabase.from('cameras').insert({ name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type, zone_id: camForm.zone_id }).select('id').single();
         if (error) throw error;
+        camId = data.id;
+      }
+      // Save PPE rules for this camera
+      if (camId) {
+        await (supabase.from('zone_ppe_rules').delete() as any).eq('camera_id', camId);
+        const rules: any[] = [];
+        PPE_ITEMS.forEach(item => {
+          if (generalPpe[item.key]) {
+            rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
+          }
+        });
+        if (perJabatanEnabled) {
+          jabatanPpeList.forEach(jp => {
+            PPE_ITEMS.forEach(item => {
+              if (jp.ppe[item.key]) {
+                rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: jp.jabatan });
+              }
+            });
+          });
+        }
+        if (rules.length > 0) {
+          const { error } = await supabase.from('zone_ppe_rules').insert(rules);
+          if (error) throw error;
+        }
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); setCamDialog(false); setEditingCam(null); toast({ title: 'Kamera disimpan' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); qc.invalidateQueries({ queryKey: ['ppe-rules'] }); setCamDialog(false); setEditingCam(null); toast({ title: 'Kamera disimpan' }); },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
@@ -108,12 +143,37 @@ export default function Zones() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cameras'] }),
   });
 
+  const openCamDialog = (zone_id: string, cam?: CameraRow) => {
+    setEditingCam(cam || null);
+    setCamForm({ name: cam?.name || '', rtsp_url: cam?.rtsp_url || '', point_type: cam?.point_type || 'area', zone_id });
+    // Load existing PPE rules for this camera
+    const camRules = ppeRules.filter((r: any) => r.camera_id === cam?.id);
+    const gen: PpeMatrix = {};
+    const jabMap = new Map<string, PpeMatrix>();
+    camRules.forEach((r: any) => {
+      if (!r.jabatan) {
+        gen[r.ppe_item] = true;
+      } else {
+        if (!jabMap.has(r.jabatan)) jabMap.set(r.jabatan, {});
+        jabMap.get(r.jabatan)![r.ppe_item] = true;
+      }
+    });
+    setGeneralPpe(gen);
+    setPerJabatanEnabled(jabMap.size > 0);
+    setJabatanPpeList(Array.from(jabMap.entries()).map(([jabatan, ppe]) => ({ jabatan, ppe })));
+    setCamDialog(true);
+  };
+
+  const addJabatanPpe = () => {
+    setJabatanPpeList(prev => [...prev, { jabatan: '', ppe: {} }]);
+  };
+
   return (
     <AppLayout title="Zona & Kamera">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{zones.length} zona terdaftar</p>
-          <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '' }); setZoneDialog(true); }}>
+          <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '', shift: 'day', shift_start: '07:00', shift_end: '17:00' }); setZoneDialog(true); }}>
             <Plus className="mr-1 h-4 w-4" />Tambah Zona
           </Button>
         </div>
@@ -122,6 +182,9 @@ export default function Zones() {
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : zones.map(zone => {
           const zoneCams = cameras.filter(c => c.zone_id === zone.id);
+          const zoneShift = (zone as any).shift || 'day';
+          const zoneStart = (zone as any).shift_start || '07:00';
+          const zoneEnd = (zone as any).shift_end || '17:00';
           return (
             <Collapsible key={zone.id}>
               <Card>
@@ -131,13 +194,12 @@ export default function Zones() {
                       <MapPin className="h-4 w-4 text-primary" />
                       <div>
                         <p className="font-medium">{zone.name}</p>
-                        {zone.description && <p className="text-xs text-muted-foreground">{zone.description}</p>}
+                        <p className="text-xs text-muted-foreground">{zone.description || ''} • Shift: {zoneShift === 'day' ? 'Day' : 'Night'} ({zoneStart}–{zoneEnd})</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant="outline"><Camera className="mr-1 h-3 w-3" />{zoneCams.length}</Badge>
-                      <Badge variant={zone.is_active ? 'default' : 'secondary'}>{zone.is_active ? 'Aktif' : 'Nonaktif'}</Badge>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '' }); setZoneDialog(true); }}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '', shift: zoneShift, shift_start: zoneStart, shift_end: zoneEnd }); setZoneDialog(true); }}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={e => { e.stopPropagation(); setDeleteZone(zone); }}>
@@ -151,7 +213,7 @@ export default function Zones() {
                   <div className="border-t px-4 pb-4 pt-2">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-muted-foreground uppercase">Kamera di zona ini</p>
-                      <Button variant="outline" size="sm" onClick={() => { setEditingCam(null); setCamForm({ name: '', rtsp_url: '', point_type: 'area', zone_id: zone.id }); setCamDialog(true); }}>
+                      <Button variant="outline" size="sm" onClick={() => openCamDialog(zone.id)}>
                         <Plus className="mr-1 h-3 w-3" />Tambah Kamera
                       </Button>
                     </div>
@@ -159,22 +221,26 @@ export default function Zones() {
                       <p className="text-sm text-muted-foreground py-2">Belum ada kamera</p>
                     ) : (
                       <Table>
-                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Tipe</TableHead><TableHead>Aktif</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Tipe</TableHead><TableHead>Aktif</TableHead><TableHead>APD</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
                         <TableBody>
-                          {zoneCams.map(cam => (
-                            <TableRow key={cam.id}>
-                              <TableCell className="font-medium">{cam.name}</TableCell>
-                              <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
-                              <TableCell><Badge variant="outline" className="capitalize">{cam.point_type}</Badge></TableCell>
-                              <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingCam(cam); setCamForm({ name: cam.name, rtsp_url: cam.rtsp_url || '', point_type: cam.point_type, zone_id: cam.zone_id }); setCamDialog(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                          {zoneCams.map(cam => {
+                            const camPpeCount = ppeRules.filter((r: any) => r.camera_id === cam.id && !r.jabatan).length;
+                            return (
+                              <TableRow key={cam.id}>
+                                <TableCell className="font-medium">{cam.name}</TableCell>
+                                <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
+                                <TableCell><Badge variant="outline" className="capitalize">{cam.point_type === 'entry' ? 'Masuk' : cam.point_type === 'exit' ? 'Keluar' : 'Area'}</Badge></TableCell>
+                                <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
+                                <TableCell><Badge variant="secondary">{camPpeCount} APD</Badge></TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1">
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCamDialog(zone.id, cam)}><Pencil className="h-3.5 w-3.5" /></Button>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     )}
@@ -193,6 +259,20 @@ export default function Zones() {
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Nama Zona</Label><Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} /></div>
             <div className="grid gap-2"><Label>Deskripsi</Label><Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Shift</Label>
+              <Select value={zoneForm.shift} onValueChange={v => setZoneForm({ ...zoneForm, shift: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Day</SelectItem>
+                  <SelectItem value="night">Night</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Waktu Mulai</Label><Input type="time" value={zoneForm.shift_start} onChange={e => setZoneForm({ ...zoneForm, shift_start: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Waktu Selesai</Label><Input type="time" value={zoneForm.shift_end} onChange={e => setZoneForm({ ...zoneForm, shift_end: e.target.value })} /></div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
@@ -201,10 +281,10 @@ export default function Zones() {
         </DialogContent>
       </Dialog>
 
-      {/* Camera Dialog */}
+      {/* Camera Dialog with APD Matrix */}
       <Dialog open={camDialog} onOpenChange={setCamDialog}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola informasi kamera.</DialogDescription></DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan atur matrix APD.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Nama Kamera</Label><Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} /></div>
             <div className="grid gap-2"><Label>RTSP URL</Label><Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." /></div>
@@ -212,8 +292,59 @@ export default function Zones() {
               <Label>Tipe</Label>
               <Select value={camForm.point_type} onValueChange={v => setCamForm({ ...camForm, point_type: v as any })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{POINT_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
+                <SelectContent>{POINT_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t === 'entry' ? 'Masuk' : t === 'exit' ? 'Keluar' : 'Area'}</SelectItem>)}</SelectContent>
               </Select>
+            </div>
+
+            {/* APD Matrix */}
+            <div className="border-t pt-3">
+              <Label className="font-medium">Matrix APD (General)</Label>
+              <div className="grid gap-2 mt-2">
+                {PPE_ITEMS.map(item => (
+                  <div key={item.key} className="flex items-center justify-between">
+                    <span className="text-sm">{item.label}</span>
+                    <Switch checked={!!generalPpe[item.key]} onCheckedChange={v => setGeneralPpe(prev => ({ ...prev, [item.key]: v }))} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Per Jabatan APD */}
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between">
+                <Label className="font-medium">APD Berbeda per Jabatan</Label>
+                <Switch checked={perJabatanEnabled} onCheckedChange={setPerJabatanEnabled} />
+              </div>
+              {perJabatanEnabled && (
+                <div className="space-y-3 mt-3">
+                  {jabatanPpeList.map((jp, idx) => (
+                    <Card key={idx} className="p-3">
+                      <div className="grid gap-2">
+                        <Select value={jp.jabatan} onValueChange={v => {
+                          const updated = [...jabatanPpeList]; updated[idx] = { ...updated[idx], jabatan: v }; setJabatanPpeList(updated);
+                        }}>
+                          <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
+                          <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
+                        </Select>
+                        {PPE_ITEMS.map(item => (
+                          <div key={item.key} className="flex items-center justify-between">
+                            <span className="text-xs">{item.label}</span>
+                            <Switch checked={!!jp.ppe[item.key]} onCheckedChange={v => {
+                              const updated = [...jabatanPpeList];
+                              updated[idx] = { ...updated[idx], ppe: { ...updated[idx].ppe, [item.key]: v } };
+                              setJabatanPpeList(updated);
+                            }} />
+                          </div>
+                        ))}
+                        <Button variant="ghost" size="sm" className="text-destructive text-xs" onClick={() => setJabatanPpeList(prev => prev.filter((_, i) => i !== idx))}>
+                          Hapus Jabatan
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={addJabatanPpe}><Plus className="mr-1 h-3 w-3" />Tambah Jabatan</Button>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

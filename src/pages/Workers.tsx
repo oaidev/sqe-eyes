@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,22 +10,18 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Search, Upload, Pencil, Trash2, Loader2, Camera } from 'lucide-react';
+import { Plus, Search, Upload, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
-import { EnrollFaceDialog } from '@/components/workers/EnrollFaceDialog';
 
 type Worker = Tables<'workers'>;
 
-const SHIFTS: Array<'day' | 'night' | 'rotating'> = ['day', 'night', 'rotating'];
-const ENROLLMENT_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  ENROLLED: { label: 'Terdaftar', variant: 'default' },
-  NOT_ENROLLED: { label: 'Belum Didaftarkan', variant: 'secondary' },
-  ENROLLING: { label: 'Proses', variant: 'outline' },
-  FAILED: { label: 'Gagal', variant: 'destructive' },
-};
+const SHIFTS = ['day', 'night'] as const;
+const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
+const DEPT_OPTIONS = ['Maintenance', 'Produksi', 'SHE', 'Plant', 'Logistik', 'Engineering', 'HRD'];
 
-const emptyForm: { sid: string; nama: string; jabatan: string; departemen: string; shift: 'day' | 'night' | 'rotating' } = { sid: '', nama: '', jabatan: '', departemen: '', shift: 'day' };
+type FormState = { sid: string; nama: string; jabatan: string; departemen: string; shift: 'day' | 'night'; is_active: boolean };
+const emptyForm: FormState = { sid: '', nama: '', jabatan: '', departemen: '', shift: 'day', is_active: true };
 
 export default function Workers() {
   const { toast } = useToast();
@@ -36,8 +32,8 @@ export default function Workers() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<Worker | null>(null);
   const [editing, setEditing] = useState<Worker | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [enrollWorker, setEnrollWorker] = useState<Worker | null>(null);
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['workers'],
@@ -48,24 +44,30 @@ export default function Workers() {
     },
   });
 
+  const { data: faceEmbeddings = [] } = useQuery({
+    queryKey: ['face-embeddings'],
+    queryFn: async () => {
+      const { data } = await supabase.from('worker_face_embeddings').select('worker_id, photo_url');
+      return data || [];
+    },
+  });
+
+  const faceMap = new Map(faceEmbeddings.map((f: any) => [f.worker_id, f.photo_url]));
   const departments = [...new Set(workers.map(w => w.departemen))];
 
   const saveMutation = useMutation({
-    mutationFn: async (values: typeof form) => {
+    mutationFn: async (values: FormState) => {
       if (editing) {
-        const { error } = await supabase.from('workers').update({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, shift: values.shift }).eq('id', editing.id);
+        const { error } = await supabase.from('workers').update({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, shift: values.shift, is_active: values.is_active }).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('workers').insert({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, shift: values.shift });
+        const { error } = await supabase.from('workers').insert({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, shift: values.shift, is_active: values.is_active });
         if (error) throw error;
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workers'] });
-      qc.invalidateQueries({ queryKey: ['stats-workers'] });
-      setDialogOpen(false);
-      setEditing(null);
-      setForm(emptyForm);
+      setDialogOpen(false); setEditing(null); setForm(emptyForm);
       toast({ title: editing ? 'Pekerja diperbarui' : 'Pekerja ditambahkan' });
     },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
@@ -76,12 +78,7 @@ export default function Workers() {
       const { error } = await supabase.from('workers').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['workers'] });
-      qc.invalidateQueries({ queryKey: ['stats-workers'] });
-      setDeleteDialog(null);
-      toast({ title: 'Pekerja dihapus' });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['workers'] }); setDeleteDialog(null); toast({ title: 'Pekerja dihapus' }); },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
@@ -97,7 +94,7 @@ export default function Workers() {
       const row: any = {};
       headers.forEach((h, idx) => { row[h] = cols[idx]; });
       if (row.sid && row.nama && row.jabatan && row.departemen) {
-        rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, shift: (row.shift || 'day') as 'day' | 'night' | 'rotating' });
+        rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, shift: (row.shift === 'night' ? 'night' : 'day') as any });
       }
     }
     if (rows.length === 0) { toast({ title: 'CSV kosong atau format salah', variant: 'destructive' }); return; }
@@ -110,7 +107,7 @@ export default function Workers() {
 
   const openEdit = (w: Worker) => {
     setEditing(w);
-    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen, shift: w.shift });
+    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen, shift: w.shift === 'night' ? 'night' : 'day', is_active: w.is_active });
     setDialogOpen(true);
   };
 
@@ -143,7 +140,7 @@ export default function Workers() {
               <SelectTrigger className="w-[120px]"><SelectValue placeholder="Shift" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Shift</SelectItem>
-                {SHIFTS.map(s => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}
+                {SHIFTS.map(s => <SelectItem key={s} value={s} className="capitalize">{s === 'day' ? 'Day' : 'Night'}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -167,33 +164,49 @@ export default function Workers() {
                   <TableHead>Departemen</TableHead>
                   <TableHead>Shift</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Enrollment</TableHead>
                   <TableHead className="w-[80px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Tidak ada data pekerja</TableCell></TableRow>
-                ) : filtered.map(w => (
-                  <TableRow key={w.id}>
-                    <TableCell className="font-mono text-xs">{w.sid}</TableCell>
-                    <TableCell className="font-medium">{w.nama}</TableCell>
-                    <TableCell>{w.jabatan}</TableCell>
-                    <TableCell>{w.departemen}</TableCell>
-                    <TableCell className="capitalize">{w.shift}</TableCell>
-                    <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? 'Aktif' : 'Nonaktif'}</Badge></TableCell>
-                    <TableCell><Badge variant={ENROLLMENT_LABELS[w.enrollment_status]?.variant || 'secondary'}>{ENROLLMENT_LABELS[w.enrollment_status]?.label || w.enrollment_status}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Daftarkan Wajah" onClick={() => setEnrollWorker(w)}><Camera className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Tidak ada data pekerja</TableCell></TableRow>
+                ) : filtered.map(w => {
+                  const faceUrl = faceMap.get(w.id);
+                  return (
+                    <TableRow key={w.id}>
+                      <TableCell className="font-mono text-xs">{w.sid}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {faceUrl ? (
+                            <img
+                              src={faceUrl}
+                              alt={w.nama}
+                              className="h-8 w-8 rounded-full object-cover cursor-pointer border"
+                              onClick={(e) => { e.stopPropagation(); setPhotoPreview(faceUrl); }}
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">
+                              {w.nama.substring(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="font-medium">{w.nama}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{w.jabatan}</TableCell>
+                      <TableCell>{w.departemen}</TableCell>
+                      <TableCell className="capitalize">{w.shift === 'day' ? 'Day' : 'Night'}</TableCell>
+                      <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? 'Aktif' : 'Tidak Aktif'}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -210,13 +223,42 @@ export default function Workers() {
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>SID</Label><Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" /></div>
             <div className="grid gap-2"><Label>Nama</Label><Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Jabatan</Label><Input value={form.jabatan} onChange={e => setForm({ ...form, jabatan: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Departemen</Label><Input value={form.departemen} onChange={e => setForm({ ...form, departemen: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Jabatan</Label>
+              <Select value={form.jabatan} onValueChange={v => setForm({ ...form, jabatan: v })}>
+                <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
+                <SelectContent>
+                  {JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Departemen</Label>
+              <Select value={form.departemen} onValueChange={v => setForm({ ...form, departemen: v })}>
+                <SelectTrigger><SelectValue placeholder="Pilih departemen" /></SelectTrigger>
+                <SelectContent>
+                  {DEPT_OPTIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-2">
               <Label>Shift</Label>
               <Select value={form.shift} onValueChange={v => setForm({ ...form, shift: v as any })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{SHIFTS.map(s => <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  <SelectItem value="day">Day</SelectItem>
+                  <SelectItem value="night">Night</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Status</Label>
+              <Select value={form.is_active ? 'active' : 'inactive'} onValueChange={v => setForm({ ...form, is_active: v === 'active' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="inactive">Tidak Aktif</SelectItem>
+                </SelectContent>
               </Select>
             </div>
           </div>
@@ -247,8 +289,13 @@ export default function Workers() {
         </DialogContent>
       </Dialog>
 
-      {/* Enroll Face Dialog */}
-      <EnrollFaceDialog worker={enrollWorker} open={!!enrollWorker} onOpenChange={(v) => !v && setEnrollWorker(null)} />
+      {/* Photo Preview */}
+      <Dialog open={!!photoPreview} onOpenChange={() => setPhotoPreview(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Foto Wajah</DialogTitle></DialogHeader>
+          {photoPreview && <img src={photoPreview} alt="Face" className="w-full rounded-lg" />}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

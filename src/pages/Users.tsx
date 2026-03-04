@@ -6,20 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { UserPlus, Trash2, Shield } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { UserPlus, Trash2, Shield, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 
@@ -27,36 +18,23 @@ const ROLES = [
   { value: 'admin', label: 'Admin' },
   { value: 'operator', label: 'Operator' },
   { value: 'supervisor', label: 'Supervisor' },
-  { value: 'safety_manager', label: 'Safety Manager' },
 ] as const;
 
-type AppRole = 'admin' | 'operator' | 'supervisor' | 'safety_manager';
+type AppRole = 'admin' | 'operator' | 'supervisor';
 
 interface UserRow {
-  id: string;
-  email: string;
-  full_name: string | null;
-  role: AppRole | null;
-  created_at: string;
-  last_sign_in_at: string | null;
-  email_confirmed_at: string | null;
+  id: string; email: string; full_name: string | null; role: AppRole | null;
+  created_at: string; last_sign_in_at: string | null; email_confirmed_at: string | null;
 }
 
 async function invokeManageUsers(action: string, method: string, body?: any) {
   const { data: { session } } = await supabase.auth.getSession();
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
   const url = `https://${projectId}.supabase.co/functions/v1/manage-users?action=${action}`;
-
   const res = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session?.access_token}`,
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
+    method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
     body: body ? JSON.stringify(body) : undefined,
   });
-
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Request failed');
   return json;
@@ -75,137 +53,62 @@ export default function Users() {
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['manage-users'],
-    queryFn: async () => {
-      const res = await invokeManageUsers('list', 'GET');
-      return res.users as UserRow[];
-    },
+    queryFn: async () => { const res = await invokeManageUsers('list', 'GET'); return res.users as UserRow[]; },
   });
 
   const inviteMutation = useMutation({
-    mutationFn: () =>
-      invokeManageUsers('invite', 'POST', {
-        email: inviteEmail,
-        role: inviteRole,
-        full_name: inviteFullName || undefined,
-      }),
-    onSuccess: () => {
-      toast({ title: 'Undangan terkirim', description: `Email undangan dikirim ke ${inviteEmail}` });
-      setInviteOpen(false);
-      setInviteEmail('');
-      setInviteFullName('');
-      queryClient.invalidateQueries({ queryKey: ['manage-users'] });
-    },
-    onError: (err: Error) => {
-      toast({ title: 'Gagal invite', description: err.message, variant: 'destructive' });
-    },
+    mutationFn: () => invokeManageUsers('invite', 'POST', { email: inviteEmail, role: inviteRole, full_name: inviteFullName || undefined }),
+    onSuccess: () => { toast({ title: 'Undangan terkirim' }); setInviteOpen(false); setInviteEmail(''); setInviteFullName(''); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
+    onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
   });
 
   const updateRoleMutation = useMutation({
-    mutationFn: ({ user_id, role }: { user_id: string; role: string }) =>
-      invokeManageUsers('update-role', 'POST', { user_id, role }),
-    onSuccess: () => {
-      toast({ title: 'Role diperbarui' });
-      setEditingUser(null);
-      queryClient.invalidateQueries({ queryKey: ['manage-users'] });
-    },
-    onError: (err: Error) => {
-      toast({ title: 'Gagal update role', description: err.message, variant: 'destructive' });
-    },
+    mutationFn: ({ user_id, role }: { user_id: string; role: string }) => invokeManageUsers('update-role', 'POST', { user_id, role }),
+    onSuccess: () => { toast({ title: 'Role diperbarui' }); setEditingUser(null); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
+    onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (user_id: string) =>
-      invokeManageUsers('delete-user', 'POST', { user_id }),
-    onSuccess: () => {
-      toast({ title: 'User dihapus' });
-      setDeleteUserId(null);
-      queryClient.invalidateQueries({ queryKey: ['manage-users'] });
-    },
-    onError: (err: Error) => {
-      toast({ title: 'Gagal hapus', description: err.message, variant: 'destructive' });
-    },
+    mutationFn: (user_id: string) => invokeManageUsers('delete-user', 'POST', { user_id }),
+    onSuccess: () => { toast({ title: 'User dihapus' }); setDeleteUserId(null); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
+    onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
   });
 
   const roleBadgeVariant = (role: string | null) => {
     if (!role) return 'outline' as const;
-    switch (role) {
-      case 'admin': return 'destructive' as const;
-      case 'operator': return 'default' as const;
-      case 'supervisor': return 'secondary' as const;
-      case 'safety_manager': return 'outline' as const;
-      default: return 'outline' as const;
-    }
+    switch (role) { case 'admin': return 'destructive' as const; case 'operator': return 'default' as const; default: return 'secondary' as const; }
   };
 
   return (
-    <AppLayout>
+    <AppLayout title="Kelola Pengguna">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Kelola Pengguna</h1>
-            <p className="text-muted-foreground">Invite, ubah role, atau hapus pengguna sistem</p>
-          </div>
-          <Button onClick={() => setInviteOpen(true)}>
-            <UserPlus className="mr-2 h-4 w-4" /> Invite User
-          </Button>
+          <p className="text-muted-foreground text-sm">Invite, ubah role, atau hapus pengguna sistem</p>
+          <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Invite User</Button>
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Daftar Pengguna ({users.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {isLoading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-              </div>
+              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Nama</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Login Terakhir</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
+                    <TableHead>Email</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead>Login Terakhir</TableHead><TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id} className={!u.role ? 'bg-destructive/5' : ''}>
+                  {users.map(u => (
+                    <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.full_name || '—'}</TableCell>
-                      <TableCell>
-                        <Badge variant={roleBadgeVariant(u.role)}>
-                          {u.role ? u.role.replace('_', ' ') : 'Belum ada role'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={u.email_confirmed_at ? 'default' : 'outline'}>
-                          {u.email_confirmed_at ? 'Aktif' : 'Pending'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {u.last_sign_in_at
-                          ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID')
-                          : '—'}
-                      </TableCell>
+                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role || 'Belum ada role'}</Badge></TableCell>
+                      <TableCell><Badge variant={u.email_confirmed_at ? 'default' : 'outline'}>{u.email_confirmed_at ? 'Aktif' : 'Pending'}</Badge></TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID') : '—'}</TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => { setEditingUser(u); setEditRole(u.role || 'operator'); }}
-                        >
-                          <Shield className="h-3 w-3 mr-1" /> Role
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteUserId(u.id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setEditingUser(u); setEditRole(u.role || 'operator'); }}><Shield className="h-3 w-3 mr-1" /> Role</Button>
+                        <Button size="sm" variant="destructive" onClick={() => setDeleteUserId(u.id)}><Trash2 className="h-3 w-3" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -216,98 +119,49 @@ export default function Users() {
         </Card>
       </div>
 
-      {/* Invite Dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invite User Baru</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Invite User Baru</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="user@company.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Nama Lengkap (opsional)</Label>
-              <Input
-                value={inviteFullName}
-                onChange={(e) => setInviteFullName(e.target.value)}
-                placeholder="Nama lengkap"
-              />
-            </div>
+            <div className="space-y-2"><Label>Email</Label><Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" /></div>
+            <div className="space-y-2"><Label>Nama Lengkap (opsional)</Label><Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} /></div>
             <div className="space-y-2">
               <Label>Role</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as AppRole)}>
+              <Select value={inviteRole} onValueChange={v => setInviteRole(v as AppRole)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ROLES.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                  ))}
-                </SelectContent>
+                <SelectContent>{ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Batal</Button>
-            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || inviteMutation.isPending}>
-              {inviteMutation.isPending ? 'Mengirim...' : 'Kirim Undangan'}
-            </Button>
+            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || inviteMutation.isPending}>{inviteMutation.isPending ? 'Mengirim...' : 'Kirim Undangan'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Role Dialog */}
       <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Ubah Role — {editingUser?.email}</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Ubah Role — {editingUser?.email}</DialogTitle></DialogHeader>
           <div className="py-4">
-            <Select value={editRole} onValueChange={(v) => setEditRole(v as AppRole)}>
+            <Select value={editRole} onValueChange={v => setEditRole(v as AppRole)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                ))}
-              </SelectContent>
+              <SelectContent>{ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingUser(null)}>Batal</Button>
-            <Button
-              onClick={() =>
-                editingUser && updateRoleMutation.mutate({ user_id: editingUser.id, role: editRole })
-              }
-              disabled={updateRoleMutation.isPending}
-            >
-              Simpan
-            </Button>
+            <Button onClick={() => editingUser && updateRoleMutation.mutate({ user_id: editingUser.id, role: editRole })} disabled={updateRoleMutation.isPending}>Simpan</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
       <AlertDialog open={!!deleteUserId} onOpenChange={() => setDeleteUserId(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle>
-            <AlertDialogDescription>
-              User akan dihapus permanen dari sistem termasuk role dan profil-nya. Aksi ini tidak bisa dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>User akan dihapus permanen.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteUserId && deleteMutation.mutate(deleteUserId)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Hapus
-            </AlertDialogAction>
+            <AlertDialogAction onClick={() => deleteUserId && deleteMutation.mutate(deleteUserId)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Hapus</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

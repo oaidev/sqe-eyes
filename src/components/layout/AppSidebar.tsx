@@ -1,43 +1,17 @@
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarHeader,
-  SidebarFooter,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
+  SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
 } from '@/components/ui/sidebar';
 import {
-  LayoutDashboard,
-  Users,
-  MapPin,
-  ShieldCheck,
-  KeyRound,
-  MonitorPlay,
-  Activity,
-  AlertTriangle,
-  ClipboardCheck,
-  FileText,
-  BarChart3,
-  LogOut,
-  ChevronDown,
-  Shield,
+  LayoutDashboard, Users, MapPin, Shield, ScanSearch, ClipboardCheck, LogOut, ChevronDown, KeyRound,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import logo from '@/assets/logo.png';
 
-type AppRole = 'admin' | 'operator' | 'supervisor' | 'safety_manager';
+type AppRole = 'admin' | 'operator' | 'supervisor';
 
 interface NavItem {
   title: string;
@@ -50,7 +24,7 @@ const navItems: { group: string; items: NavItem[] }[] = [
   {
     group: 'Umum',
     items: [
-      { title: 'Dashboard', url: '/', icon: LayoutDashboard, roles: ['admin', 'operator', 'supervisor', 'safety_manager'] },
+      { title: 'Dashboard', url: '/', icon: LayoutDashboard, roles: ['admin', 'operator', 'supervisor'] },
     ],
   },
   {
@@ -58,32 +32,21 @@ const navItems: { group: string; items: NavItem[] }[] = [
     items: [
       { title: 'Kelola Pekerja', url: '/workers', icon: Users, roles: ['admin'] },
       { title: 'Zona & Kamera', url: '/zones', icon: MapPin, roles: ['admin'] },
-      { title: 'Aturan APD', url: '/ppe-rules', icon: ShieldCheck, roles: ['admin'] },
-      { title: 'Aturan Akses', url: '/access-rules', icon: KeyRound, roles: ['admin'] },
       { title: 'Kelola Pengguna', url: '/users', icon: Shield, roles: ['admin'] },
+      { title: 'Kelola Role', url: '/roles', icon: KeyRound, roles: ['admin'] },
+      { title: 'Simulasi Deteksi', url: '/simulate', icon: ScanSearch, roles: ['admin'] },
     ],
   },
   {
     group: 'Operator — Monitoring',
     items: [
-      { title: 'Live Kamera', url: '/live-cameras', icon: MonitorPlay, roles: ['admin', 'operator'] },
-      { title: 'Event Terkini', url: '/events', icon: Activity, roles: ['admin', 'operator'] },
-      { title: 'Inbox Alert', url: '/alerts', icon: AlertTriangle, roles: ['admin', 'operator'] },
+      { title: 'Validasi Operator', url: '/operator-validation', icon: ClipboardCheck, roles: ['admin', 'operator'] },
     ],
   },
   {
     group: 'Supervisor',
     items: [
-      { title: 'Validasi Alert', url: '/validations', icon: ClipboardCheck, roles: ['admin', 'supervisor'] },
-      { title: 'Izin Keluar', url: '/exit-permits', icon: FileText, roles: ['admin', 'supervisor'] },
-    ],
-  },
-  {
-    group: 'Safety Manager',
-    items: [
-      { title: 'Laporan Kepatuhan', url: '/compliance', icon: BarChart3, roles: ['admin', 'safety_manager'] },
-      { title: 'Rekap Pelanggaran', url: '/violations', icon: AlertTriangle, roles: ['admin', 'safety_manager'] },
-      { title: 'Ekspor Laporan', url: '/reports', icon: FileText, roles: ['admin', 'safety_manager'] },
+      { title: 'Validasi Supervisor', url: '/supervisor-validation', icon: ClipboardCheck, roles: ['admin', 'supervisor'] },
     ],
   },
 ];
