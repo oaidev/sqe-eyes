@@ -52,7 +52,6 @@ export default function Index() {
   const { data: validatedCount = 0, isLoading: vl } = useQuery({
     queryKey: ['stats-validated-today'],
     queryFn: async () => {
-      // Get today's alerts that have at least one validation
       const { data: todayAlerts } = await supabase.from('alerts').select('id').gte('created_at', today);
       if (!todayAlerts || todayAlerts.length === 0) return 0;
       const alertIds = todayAlerts.map(a => a.id);
@@ -64,31 +63,41 @@ export default function Index() {
 
   const unvalidatedCount = (alertCount ?? 0) - validatedCount;
 
-  // 7-day chart data
-  const { data: chartValidations = [] } = useQuery({
-    queryKey: ['stats-7day-validations'],
+  // 7-day chart data — count alerts per day as sudah/belum divalidasi
+  const { data: chartAlerts = [] } = useQuery({
+    queryKey: ['stats-7day-alerts'],
     queryFn: async () => {
       const from = format(subDays(new Date(), 6), 'yyyy-MM-dd');
-      const { data } = await supabase.from('supervisor_validations').select('status, created_at').gte('created_at', `${from}T00:00:00`);
+      const { data } = await supabase.from('alerts').select('id, created_at').gte('created_at', `${from}T00:00:00`);
       return data || [];
     },
   });
 
+  const { data: chartValidationAlertIds = [] } = useQuery({
+    queryKey: ['stats-7day-validation-ids'],
+    queryFn: async () => {
+      const from = format(subDays(new Date(), 6), 'yyyy-MM-dd');
+      const { data } = await supabase.from('supervisor_validations').select('alert_id').gte('created_at', `${from}T00:00:00`);
+      return (data || []).map((v: any) => v.alert_id);
+    },
+  });
+
   const chartData = useMemo(() => {
+    const validatedSet = new Set(chartValidationAlertIds);
     const days = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i);
-      return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: idLocale }), valid: 0, tidak_valid: 0 };
+      return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: idLocale }), sudah: 0, belum: 0 };
     });
-    chartValidations.forEach((v: any) => {
-      const vDate = v.created_at?.substring(0, 10);
-      const day = days.find(d => d.date === vDate);
+    chartAlerts.forEach((a: any) => {
+      const aDate = a.created_at?.substring(0, 10);
+      const day = days.find(d => d.date === aDate);
       if (day) {
-        if (v.status === 'VALID') day.valid++;
-        else if (v.status === 'TIDAK_VALID') day.tidak_valid++;
+        if (validatedSet.has(a.id)) day.sudah++;
+        else day.belum++;
       }
     });
     return days;
-  }, [chartValidations]);
+  }, [chartAlerts, chartValidationAlertIds]);
 
   return (
     <AppLayout title="Dashboard">
@@ -111,7 +120,7 @@ export default function Index() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Validasi 7 Hari Terakhir</CardTitle>
+            <CardTitle className="text-base">Alert 7 Hari Terakhir</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -120,8 +129,8 @@ export default function Index() {
                 <YAxis allowDecimals={false} fontSize={12} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="valid" name="Valid" fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="tidak_valid" name="Tidak Valid" fill="hsl(var(--primary))" stackId="a" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="sudah" name="Sudah Divalidasi" fill="hsl(var(--primary))" stackId="a" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="belum" name="Belum Divalidasi" fill="hsl(var(--destructive))" stackId="a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

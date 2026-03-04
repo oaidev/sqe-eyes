@@ -1,0 +1,1 @@
+ALTER TABLE public.cameras ADD COLUMN jenis_pelanggaran text DEFAULT 'APD_TIDAK_LENGKAP';

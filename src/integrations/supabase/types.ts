@@ -61,6 +61,7 @@ export type Database = {
           detection_models: string[] | null
           id: string
           is_active: boolean
+          jenis_pelanggaran: string | null
           name: string
           off_time_end: string | null
           off_time_start: string | null
@@ -74,6 +75,7 @@ export type Database = {
           detection_models?: string[] | null
           id?: string
           is_active?: boolean
+          jenis_pelanggaran?: string | null
           name: string
           off_time_end?: string | null
           off_time_start?: string | null
@@ -87,6 +89,7 @@ export type Database = {
           detection_models?: string[] | null
           id?: string
           is_active?: boolean
+          jenis_pelanggaran?: string | null
           name?: string
           off_time_end?: string | null
           off_time_start?: string | null
