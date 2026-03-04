@@ -63,7 +63,7 @@ export default function OperatorValidation() {
   const [validationStatus, setValidationStatus] = useState<'VALID' | 'TIDAK_VALID'>('VALID');
   const [alasanType, setAlasanType] = useState('APD_TIDAK_LENGKAP');
   const [alasanText, setAlasanText] = useState('');
-  const [reviseSid, setReviseSid] = useState('');
+  const [reviseSid, setReviseSid] = useState('__none__');
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['operator-events', dateFrom, dateTo],
@@ -150,7 +150,7 @@ export default function OperatorValidation() {
       if (!alert) throw new Error('Tidak ada alert untuk event ini');
 
       // If SID revised, update the event worker_id
-      if (reviseSid) {
+      if (reviseSid && reviseSid !== '__none__') {
         await supabase.from('events').update({ worker_id: reviseSid } as any).eq('id', selectedEvent.id);
       }
 
@@ -277,7 +277,7 @@ export default function OperatorValidation() {
                 ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Tidak ada event</TableCell></TableRow>
                 ) : filtered.map(e => (
-                  <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setValidationStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid(''); }}>
+                  <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setValidationStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid('__none__'); }}>
                     <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
                     <TableCell className="font-medium text-sm">
                       {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
@@ -357,7 +357,7 @@ export default function OperatorValidation() {
                       <Select value={reviseSid} onValueChange={setReviseSid}>
                         <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Tidak ada revisi</SelectItem>
+                          <SelectItem value="__none__">Tidak ada revisi</SelectItem>
                           {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
                         </SelectContent>
                       </Select>

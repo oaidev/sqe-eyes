@@ -49,16 +49,20 @@ export default function Index() {
     queryFn: async () => { const { count } = await supabase.from('alerts').select('*', { count: 'exact', head: true }).gte('created_at', today); return count ?? 0; },
   });
 
-  const { data: validations = [], isLoading: vl } = useQuery({
-    queryKey: ['stats-validations-today'],
+  const { data: validatedCount = 0, isLoading: vl } = useQuery({
+    queryKey: ['stats-validated-today'],
     queryFn: async () => {
-      const { data } = await supabase.from('supervisor_validations').select('status, created_at').gte('created_at', today);
-      return data || [];
+      // Get today's alerts that have at least one validation
+      const { data: todayAlerts } = await supabase.from('alerts').select('id').gte('created_at', today);
+      if (!todayAlerts || todayAlerts.length === 0) return 0;
+      const alertIds = todayAlerts.map(a => a.id);
+      const { data: vals } = await supabase.from('supervisor_validations').select('alert_id').in('alert_id', alertIds);
+      const validatedSet = new Set((vals || []).map((v: any) => v.alert_id));
+      return validatedSet.size;
     },
   });
 
-  const validToday = validations.filter((v: any) => v.status === 'VALID').length;
-  const invalidToday = validations.filter((v: any) => v.status === 'TIDAK_VALID').length;
+  const unvalidatedCount = (alertCount ?? 0) - validatedCount;
 
   // 7-day chart data
   const { data: chartValidations = [] } = useQuery({
@@ -101,8 +105,8 @@ export default function Index() {
           <StatCard title="Zona Aktif" value={String(zoneCount ?? 0)} icon={MapPin} color="bg-green-500/10 text-green-600" loading={zl} />
           <StatCard title="Kamera Aktif" value={String(cameraCount ?? 0)} icon={Camera} color="bg-primary/10 text-primary" loading={cl} />
           <StatCard title="Alert Hari Ini" value={String(alertCount ?? 0)} icon={AlertTriangle} color="bg-amber-500/10 text-amber-600" loading={al} />
-          <StatCard title="Valid Hari Ini" value={String(validToday)} icon={CheckCircle} color="bg-destructive/10 text-destructive" loading={vl} />
-          <StatCard title="Tidak Valid Hari Ini" value={String(invalidToday)} icon={XCircle} color="bg-green-500/10 text-green-600" loading={vl} />
+          <StatCard title="Sudah Divalidasi" value={String(validatedCount)} icon={CheckCircle} color="bg-green-500/10 text-green-600" loading={vl} />
+          <StatCard title="Belum Divalidasi" value={String(unvalidatedCount)} icon={XCircle} color="bg-destructive/10 text-destructive" loading={vl || al} />
         </div>
 
         <Card>
