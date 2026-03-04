@@ -9,7 +9,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -29,11 +28,6 @@ const PPE_ITEMS = [
 ];
 const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
 
-const DETECTION_MODELS = [
-  { key: 'apd', label: 'Deteksi APD' },
-  { key: 'face', label: 'Deteksi Wajah' },
-];
-
 interface PpeMatrix { [key: string]: boolean }
 interface JabatanPpe { jabatan: string; ppe: PpeMatrix }
 
@@ -45,7 +39,7 @@ export default function Zones() {
   const [zoneForm, setZoneForm] = useState({ name: '', description: '' });
   const [camDialog, setCamDialog] = useState(false);
   const [editingCam, setEditingCam] = useState<CameraRow | null>(null);
-  const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; point_type: 'exit' | 'area'; zone_id: string; off_time_start: string; off_time_end: string; detection_models: string[] }>({ name: '', rtsp_url: '', point_type: 'area', zone_id: '', off_time_start: '', off_time_end: '', detection_models: [] });
+  const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; jenis_pelanggaran: string; zone_id: string; off_time_start: string; off_time_end: string }>({ name: '', rtsp_url: '', jenis_pelanggaran: 'APD_TIDAK_LENGKAP', zone_id: '', off_time_start: '', off_time_end: '' });
   const [deleteZone, setDeleteZone] = useState<Zone | null>(null);
   const [deleteCam, setDeleteCam] = useState<CameraRow | null>(null);
 
@@ -97,7 +91,17 @@ export default function Zones() {
   const saveCamMut = useMutation({
     mutationFn: async () => {
       let camId = editingCam?.id;
-      const camPayload: any = { name: camForm.name, rtsp_url: camForm.rtsp_url || null, point_type: camForm.point_type, off_time_start: camForm.off_time_start || null, off_time_end: camForm.off_time_end || null, detection_models: camForm.detection_models };
+      // Derive point_type from jenis_pelanggaran
+      const pointType = camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'exit' : 'area';
+      const camPayload: any = {
+        name: camForm.name,
+        rtsp_url: camForm.rtsp_url || null,
+        point_type: pointType,
+        jenis_pelanggaran: camForm.jenis_pelanggaran,
+        off_time_start: camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? (camForm.off_time_start || null) : null,
+        off_time_end: camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? (camForm.off_time_end || null) : null,
+        detection_models: [],
+      };
       if (editingCam) {
         const { error } = await supabase.from('cameras').update(camPayload).eq('id', editingCam.id);
         if (error) throw error;
@@ -108,20 +112,22 @@ export default function Zones() {
       }
       if (camId) {
         await (supabase.from('zone_ppe_rules').delete() as any).eq('camera_id', camId);
-        const rules: any[] = [];
-        PPE_ITEMS.forEach(item => {
-          if (generalPpe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
-        });
-        if (perJabatanEnabled) {
-          jabatanPpeList.forEach(jp => {
-            PPE_ITEMS.forEach(item => {
-              if (jp.ppe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: jp.jabatan });
-            });
+        if (camForm.jenis_pelanggaran === 'APD_TIDAK_LENGKAP') {
+          const rules: any[] = [];
+          PPE_ITEMS.forEach(item => {
+            if (generalPpe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
           });
-        }
-        if (rules.length > 0) {
-          const { error } = await supabase.from('zone_ppe_rules').insert(rules);
-          if (error) throw error;
+          if (perJabatanEnabled) {
+            jabatanPpeList.forEach(jp => {
+              PPE_ITEMS.forEach(item => {
+                if (jp.ppe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: jp.jabatan });
+              });
+            });
+          }
+          if (rules.length > 0) {
+            const { error } = await supabase.from('zone_ppe_rules').insert(rules);
+            if (error) throw error;
+          }
         }
       }
     },
@@ -147,11 +153,10 @@ export default function Zones() {
     setEditingCam(cam || null);
     setCamForm({
       name: cam?.name || '', rtsp_url: cam?.rtsp_url || '',
-      point_type: (cam?.point_type === 'exit' ? 'exit' : 'area') as any,
+      jenis_pelanggaran: (cam as any)?.jenis_pelanggaran || 'APD_TIDAK_LENGKAP',
       zone_id,
       off_time_start: (cam as any)?.off_time_start || '',
       off_time_end: (cam as any)?.off_time_end || '',
-      detection_models: (cam as any)?.detection_models || [],
     });
     const camRules = ppeRules.filter((r: any) => r.camera_id === cam?.id);
     const gen: PpeMatrix = {};
@@ -167,15 +172,6 @@ export default function Zones() {
   };
 
   const addJabatanPpe = () => setJabatanPpeList(prev => [...prev, { jabatan: '', ppe: {} }]);
-
-  const toggleModel = (key: string) => {
-    setCamForm(prev => ({
-      ...prev,
-      detection_models: prev.detection_models.includes(key)
-        ? prev.detection_models.filter(m => m !== key)
-        : [...prev.detection_models, key],
-    }));
-  };
 
   return (
     <AppLayout title="Zona & Kamera">
@@ -227,13 +223,13 @@ export default function Zones() {
                       <p className="text-sm text-muted-foreground py-2">Belum ada kamera</p>
                     ) : (
                       <Table>
-                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Tipe</TableHead><TableHead>Aktif</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Jenis Pelanggaran</TableHead><TableHead>Aktif</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
                         <TableBody>
                           {zoneCams.map(cam => (
                             <TableRow key={cam.id}>
                               <TableCell className="font-medium">{cam.name}</TableCell>
                               <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
-                              <TableCell><Badge variant="outline" className="capitalize">{cam.point_type === 'exit' ? 'Keluar' : 'Area Kerja'}</Badge></TableCell>
+                              <TableCell><Badge variant="outline" className="capitalize">{(cam as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}</Badge></TableCell>
                               <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
                               <TableCell>
                                 <div className="flex gap-1">
@@ -272,93 +268,85 @@ export default function Zones() {
       {/* Camera Dialog */}
       <Dialog open={camDialog} onOpenChange={setCamDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan atur matrix APD.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan konfigurasi deteksi.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Nama Kamera</Label><Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} /></div>
             <div className="grid gap-2"><Label>RTSP URL</Label><Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." /></div>
             <div className="grid gap-2">
-              <Label>Tipe</Label>
-              <Select value={camForm.point_type} onValueChange={v => setCamForm({ ...camForm, point_type: v as any })}>
+              <Label>Jenis Pelanggaran yang Dideteksi</Label>
+              <Select value={camForm.jenis_pelanggaran} onValueChange={v => setCamForm({ ...camForm, jenis_pelanggaran: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="area">Area Kerja</SelectItem>
-                  <SelectItem value="exit">Keluar</SelectItem>
+                  <SelectItem value="APD_TIDAK_LENGKAP">APD Tidak Lengkap</SelectItem>
+                  <SelectItem value="KELUAR_TANPA_IZIN">Keluar Tanpa Izin</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Off-time */}
-            <div className="border-t pt-3">
-              <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
-              <div className="grid grid-cols-2 gap-4 mt-2">
-                <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
-                <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
-              </div>
-            </div>
-
-            {/* Detection Models */}
-            <div className="border-t pt-3">
-              <Label className="font-medium">Model Deteksi</Label>
-              <div className="grid gap-2 mt-2">
-                {DETECTION_MODELS.map(m => (
-                  <div key={m.key} className="flex items-center gap-2">
-                    <Checkbox checked={camForm.detection_models.includes(m.key)} onCheckedChange={() => toggleModel(m.key)} id={`model-${m.key}`} />
-                    <label htmlFor={`model-${m.key}`} className="text-sm cursor-pointer">{m.label}</label>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* APD Matrix */}
-            <div className="border-t pt-3">
-              <Label className="font-medium">Matrix APD (General)</Label>
-              <div className="grid gap-2 mt-2">
-                {PPE_ITEMS.map(item => (
-                  <div key={item.key} className="flex items-center justify-between">
-                    <span className="text-sm">{item.label}</span>
-                    <Switch checked={!!generalPpe[item.key]} onCheckedChange={v => setGeneralPpe(prev => ({ ...prev, [item.key]: v }))} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Per Jabatan APD */}
-            <div className="border-t pt-3">
-              <div className="flex items-center justify-between">
-                <Label className="font-medium">APD Berbeda per Jabatan</Label>
-                <Switch checked={perJabatanEnabled} onCheckedChange={setPerJabatanEnabled} />
-              </div>
-              {perJabatanEnabled && (
-                <div className="space-y-3 mt-3">
-                  {jabatanPpeList.map((jp, idx) => (
-                    <Card key={idx} className="p-3">
-                      <div className="grid gap-2">
-                        <Select value={jp.jabatan} onValueChange={v => {
-                          const updated = [...jabatanPpeList]; updated[idx] = { ...updated[idx], jabatan: v }; setJabatanPpeList(updated);
-                        }}>
-                          <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
-                          <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
-                        </Select>
-                        {PPE_ITEMS.map(item => (
-                          <div key={item.key} className="flex items-center justify-between">
-                            <span className="text-xs">{item.label}</span>
-                            <Switch checked={!!jp.ppe[item.key]} onCheckedChange={v => {
-                              const updated = [...jabatanPpeList];
-                              updated[idx] = { ...updated[idx], ppe: { ...updated[idx].ppe, [item.key]: v } };
-                              setJabatanPpeList(updated);
-                            }} />
-                          </div>
-                        ))}
-                        <Button variant="ghost" size="sm" className="text-destructive text-xs" onClick={() => setJabatanPpeList(prev => prev.filter((_, i) => i !== idx))}>
-                          Hapus Jabatan
-                        </Button>
+            {/* Conditional: APD Matrix */}
+            {camForm.jenis_pelanggaran === 'APD_TIDAK_LENGKAP' && (
+              <>
+                <div className="border-t pt-3">
+                  <Label className="font-medium">Matrix APD (General)</Label>
+                  <div className="grid gap-2 mt-2">
+                    {PPE_ITEMS.map(item => (
+                      <div key={item.key} className="flex items-center justify-between">
+                        <span className="text-sm">{item.label}</span>
+                        <Switch checked={!!generalPpe[item.key]} onCheckedChange={v => setGeneralPpe(prev => ({ ...prev, [item.key]: v }))} />
                       </div>
-                    </Card>
-                  ))}
-                  <Button variant="outline" size="sm" onClick={addJabatanPpe}><Plus className="mr-1 h-3 w-3" />Tambah Jabatan</Button>
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="font-medium">APD Berbeda per Jabatan</Label>
+                    <Switch checked={perJabatanEnabled} onCheckedChange={setPerJabatanEnabled} />
+                  </div>
+                  {perJabatanEnabled && (
+                    <div className="space-y-3 mt-3">
+                      {jabatanPpeList.map((jp, idx) => (
+                        <Card key={idx} className="p-3">
+                          <div className="grid gap-2">
+                            <Select value={jp.jabatan} onValueChange={v => {
+                              const updated = [...jabatanPpeList]; updated[idx] = { ...updated[idx], jabatan: v }; setJabatanPpeList(updated);
+                            }}>
+                              <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
+                              <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
+                            </Select>
+                            {PPE_ITEMS.map(item => (
+                              <div key={item.key} className="flex items-center justify-between">
+                                <span className="text-xs">{item.label}</span>
+                                <Switch checked={!!jp.ppe[item.key]} onCheckedChange={v => {
+                                  const updated = [...jabatanPpeList];
+                                  updated[idx] = { ...updated[idx], ppe: { ...updated[idx].ppe, [item.key]: v } };
+                                  setJabatanPpeList(updated);
+                                }} />
+                              </div>
+                            ))}
+                            <Button variant="ghost" size="sm" className="text-destructive text-xs" onClick={() => setJabatanPpeList(prev => prev.filter((_, i) => i !== idx))}>
+                              Hapus Jabatan
+                            </Button>
+                          </div>
+                        </Card>
+                      ))}
+                      <Button variant="outline" size="sm" onClick={addJabatanPpe}><Plus className="mr-1 h-3 w-3" />Tambah Jabatan</Button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Conditional: Waktu Kamera Off for Keluar Tanpa Izin */}
+            {camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' && (
+              <div className="border-t pt-3">
+                <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCamDialog(false)}>Batal</Button>

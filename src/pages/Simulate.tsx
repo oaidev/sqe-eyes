@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,7 +19,6 @@ interface DetectionResult {
   timestamp: Date;
   worker: { nama: string; sid: string } | null;
   event_type: string;
-  confidence: number | null;
   ppe_results: Record<string, { detected: boolean; confidence: number }>;
   alert_created: boolean;
   alert_type?: string;
@@ -36,6 +37,7 @@ export default function Simulate() {
   const [autoCapture, setAutoCapture] = useState(false);
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(5);
   const autoCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>('');
 
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
@@ -49,6 +51,14 @@ export default function Simulate() {
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const { data: cameras = [] } = useQuery({
+    queryKey: ['cameras-for-simulate'],
+    queryFn: async () => {
+      const { data } = await supabase.from('cameras').select('id, name, zone_id, jenis_pelanggaran, zones(name)').eq('is_active', true).order('name');
+      return data || [];
+    },
+  });
 
   useEffect(() => {
     if (webcamActive && webcamVideoRef.current && webcamStreamRef.current) {
@@ -91,16 +101,20 @@ export default function Simulate() {
   }, []);
 
   const runDetection = useCallback(async (imageBase64: string) => {
+    if (!selectedCameraId) {
+      toast.error('Pilih kamera terlebih dahulu');
+      return;
+    }
     setDetecting(true);
     try {
       const { data, error } = await supabase.functions.invoke('detect-event', {
-        body: { image_base64: imageBase64 },
+        body: { image_base64: imageBase64, camera_id: selectedCameraId },
       });
       if (error) throw error;
       const result: DetectionResult = {
         id: crypto.randomUUID(), timestamp: new Date(),
         worker: data.worker || null, event_type: data.event_type || 'UNKNOWN',
-        confidence: data.confidence_score || null, ppe_results: data.ppe_results || {},
+        ppe_results: data.ppe_results || {},
         alert_created: !!data.alert_id, alert_type: data.alert_type,
         violations: data.violations || [], zone_rules_applied: data.zone_rules_applied || false,
       };
@@ -109,7 +123,7 @@ export default function Simulate() {
     } catch (err: any) {
       toast.error(`Deteksi gagal: ${err.message}`);
     } finally { setDetecting(false); }
-  }, []);
+  }, [selectedCameraId]);
 
   const handleWebcamCapture = () => { if (!webcamVideoRef.current) return; const b = captureFrame(webcamVideoRef.current); if (b) runDetection(b); };
   const handleVideoCapture = () => { if (!videoRef.current) return; const b = captureFrame(videoRef.current); if (b) runDetection(b); };
@@ -139,10 +153,34 @@ export default function Simulate() {
     return () => { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); };
   }, [autoCapture, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
 
+  const selectedCamera = cameras.find((c: any) => c.id === selectedCameraId);
+
   return (
     <AppLayout title="Simulasi Deteksi">
       <div className="max-w-5xl mx-auto space-y-4">
         <canvas ref={canvasRef} className="hidden" />
+
+        {/* Camera selection */}
+        <div className="grid gap-2">
+          <Label className="font-medium">Pilih Kamera (Wajib)</Label>
+          <Select value={selectedCameraId} onValueChange={setSelectedCameraId}>
+            <SelectTrigger className="w-full max-w-sm">
+              <SelectValue placeholder="Pilih kamera..." />
+            </SelectTrigger>
+            <SelectContent>
+              {cameras.map((c: any) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name} — {(c as any).zones?.name || 'Tanpa Zona'} ({(c as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedCamera && (
+            <p className="text-xs text-muted-foreground">
+              Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}</Badge>
+            </p>
+          )}
+        </div>
 
         <div className="grid md:grid-cols-[1fr,320px] gap-4">
           {/* Left: input tabs */}
@@ -168,7 +206,7 @@ export default function Simulate() {
                   <Button onClick={startWebcam} size="sm">Mulai Webcam</Button>
                 ) : (
                   <>
-                    <Button onClick={handleWebcamCapture} size="sm" disabled={detecting}>
+                    <Button onClick={handleWebcamCapture} size="sm" disabled={detecting || !selectedCameraId}>
                       {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capture & Detect'}
                     </Button>
                     <Button onClick={stopWebcam} size="sm" variant="outline">Stop</Button>
@@ -177,7 +215,7 @@ export default function Simulate() {
               </div>
               {webcamActive && (
                 <div className="flex items-center gap-3">
-                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} />
+                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
                   <Label className="text-sm">Auto-capture setiap</Label>
                   <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
                   <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
@@ -199,7 +237,7 @@ export default function Simulate() {
               <div className="flex items-center gap-2">
                 <Button onClick={() => imageInputRef.current?.click()} size="sm" variant="outline">Pilih Gambar</Button>
                 {uploadedImage && (
-                  <Button onClick={handleImageDetect} size="sm" disabled={detecting}>
+                  <Button onClick={handleImageDetect} size="sm" disabled={detecting || !selectedCameraId}>
                     {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Detect'}
                   </Button>
                 )}
@@ -220,14 +258,14 @@ export default function Simulate() {
               <div className="flex items-center gap-2 flex-wrap">
                 <Button onClick={() => videoInputRef.current?.click()} size="sm" variant="outline">Pilih Video</Button>
                 {videoSrc && (
-                  <Button onClick={handleVideoCapture} size="sm" disabled={detecting}>
+                  <Button onClick={handleVideoCapture} size="sm" disabled={detecting || !selectedCameraId}>
                     {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capture Frame & Detect'}
                   </Button>
                 )}
               </div>
               {videoSrc && (
                 <div className="flex items-center gap-3">
-                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} />
+                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
                   <Label className="text-sm">Auto-capture setiap</Label>
                   <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
                   <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
@@ -240,7 +278,7 @@ export default function Simulate() {
           <div className="space-y-3">
             <h3 className="font-semibold text-sm">Hasil Deteksi</h3>
             {results.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Belum ada deteksi. Capture frame untuk memulai.</p>
+              <p className="text-xs text-muted-foreground">Belum ada deteksi. Pilih kamera lalu capture frame untuk memulai.</p>
             ) : (
               <ScrollArea className="h-[400px]">
                 <div className="space-y-2 pr-2">
@@ -260,7 +298,6 @@ export default function Simulate() {
                           ) : (
                             <><UserX className="h-4 w-4 text-destructive" /><p className="text-sm text-muted-foreground">Tidak Dikenal</p></>
                           )}
-                          {r.confidence && <Badge variant="outline" className="ml-auto text-[10px]">{(r.confidence * 100).toFixed(0)}%</Badge>}
                         </div>
                         {Object.keys(r.ppe_results).length > 0 && (
                           <div className="flex flex-wrap gap-1">

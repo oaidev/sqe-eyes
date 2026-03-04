@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, subDays } from 'date-fns';
@@ -23,37 +22,34 @@ const PPE_LABELS: Record<string, string> = {
   FACE_COVER: 'Kacamata Safety', SAFETY_SHOES: 'Sepatu Safety', REFLECTIVE_VEST: 'Rompi Reflektif',
 };
 
-const ALASAN_VALID = [
-  { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
-  { value: 'TIDAK_ADA_IZIN', label: 'Tidak Ada Izin' },
-  { value: 'LAINNYA', label: 'Alasan Lainnya' },
-];
-const ALASAN_TIDAK_VALID = [
-  { value: 'APD_LENGKAP', label: 'APD Lengkap' },
-  { value: 'SUDAH_IZIN', label: 'Sudah Ada Izin' },
-  { value: 'LAINNYA', label: 'Alasan Lainnya' },
-];
-
 const JENIS_PELANGGARAN_OPTIONS = [
   { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
-  { value: 'MASUK_TANPA_IZIN', label: 'Masuk Tanpa Izin' },
   { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Tanpa Izin' },
-  { value: 'ORANG_TIDAK_DIKENAL', label: 'Orang Tidak Dikenal' },
-  { value: 'LAINNYA', label: 'Lainnya' },
 ];
+
+function getAlasanOptions(jenisPelanggaran: string, status: string) {
+  if (jenisPelanggaran === 'APD_TIDAK_LENGKAP') {
+    if (status === 'VALID') return [{ value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' }, { value: 'LAINNYA', label: 'Alasan Lainnya' }];
+    return [{ value: 'APD_LENGKAP', label: 'APD Lengkap' }, { value: 'LAINNYA', label: 'Alasan Lainnya' }];
+  }
+  if (jenisPelanggaran === 'KELUAR_TANPA_IZIN') {
+    if (status === 'VALID') return [{ value: 'TIDAK_ADA_IZIN', label: 'Tidak Ada Izin' }, { value: 'LAINNYA', label: 'Alasan Lainnya' }];
+    return [{ value: 'SUDAH_IZIN', label: 'Sudah Ada Izin' }, { value: 'LAINNYA', label: 'Alasan Lainnya' }];
+  }
+  return [{ value: 'LAINNYA', label: 'Alasan Lainnya' }];
+}
 
 interface EventRow {
   id: string;
   detected_at: string;
   event_type: string;
-  confidence_score: number | null;
   ppe_results: any;
   snapshot_url: string | null;
   clip_url: string | null;
   worker_id: string | null;
   camera_id: string | null;
   workers: { nama: string; sid: string } | null;
-  cameras: { name: string; point_type: string; zone_id: string; zones: { name: string } | null } | null;
+  cameras: { name: string; point_type: string; zone_id: string; jenis_pelanggaran: string | null; zones: { name: string } | null } | null;
   alerts: { id: string; alert_type: string; status: string }[];
 }
 
@@ -76,7 +72,6 @@ export default function SupervisorValidation() {
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [searchSid, setSearchSid] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterType, setFilterType] = useState('all');
   const [filterZone, setFilterZone] = useState('all');
   const [filterCamera, setFilterCamera] = useState('all');
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
@@ -119,7 +114,7 @@ export default function SupervisorValidation() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('events')
-        .select('*, workers(nama, sid), cameras(name, point_type, zone_id, zones(name)), alerts(id, alert_type, status)')
+        .select('*, workers(nama, sid), cameras(name, point_type, zone_id, jenis_pelanggaran, zones(name)), alerts(id, alert_type, status)')
         .gte('detected_at', `${dateFrom}T00:00:00`)
         .lte('detected_at', `${dateTo}T23:59:59`)
         .order('detected_at', { ascending: false });
@@ -158,12 +153,11 @@ export default function SupervisorValidation() {
       const supVal = supValidationMap[alert.id];
       const currentStatus = supVal?.status || opVal?.status || 'BARU';
       if (filterStatus !== 'all' && currentStatus !== filterStatus) return false;
-      if (filterType !== 'all' && alert.alert_type !== filterType) return false;
       if (filterZone !== 'all' && e.cameras?.zone_id !== filterZone) return false;
       if (filterCamera !== 'all' && e.camera_id !== filterCamera) return false;
       return true;
     });
-  }, [events, validatedAlertIds, searchSid, filterStatus, filterType, filterZone, filterCamera, opValidationMap, supValidationMap]);
+  }, [events, validatedAlertIds, searchSid, filterStatus, filterZone, filterCamera, opValidationMap, supValidationMap]);
 
   const getStatus = (e: EventRow) => {
     const alert = e.alerts?.[0];
@@ -182,7 +176,7 @@ export default function SupervisorValidation() {
     return op?.jenis_pelanggaran || null;
   };
 
-  const alasanOptions = finalStatus === 'VALID' ? ALASAN_VALID : ALASAN_TIDAK_VALID;
+  const alasanOptions = getAlasanOptions(jenisPelanggaran, finalStatus);
 
   const submitFinal = useMutation({
     mutationFn: async () => {
@@ -223,22 +217,8 @@ export default function SupervisorValidation() {
     }
   };
 
-  const renderConfidence = (score: number | null) => {
-    if (score != null) return `${(score * 100).toFixed(0)}%`;
-    return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="text-muted-foreground cursor-help">N/A</span>
-          </TooltipTrigger>
-          <TooltipContent><p>Wajah tidak cocok</p></TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  };
-
   const exportExcel = () => {
-    const headers = ['Tanggal', 'Pekerja', 'SID', 'Kamera', 'Tipe', 'Zona', 'Status Operator', 'Status Final', 'Jenis Pelanggaran', 'Confidence'];
+    const headers = ['Tanggal', 'Pekerja', 'SID', 'Kamera', 'Zona', 'Status Operator', 'Status Final', 'Jenis Pelanggaran'];
     const rows = filtered.map(e => {
       const alert = e.alerts?.[0];
       const op = alert ? opValidationMap[alert.id] : null;
@@ -247,9 +227,8 @@ export default function SupervisorValidation() {
       return [
         format(new Date(e.detected_at), 'dd/MM/yyyy HH:mm'),
         e.workers?.nama || 'Tidak Dikenal', e.workers?.sid || '-',
-        e.cameras?.name || '-', e.event_type, e.cameras?.zones?.name || '-',
+        e.cameras?.name || '-', e.cameras?.zones?.name || '-',
         op?.status || '-', getStatus(e), jpLabel,
-        e.confidence_score != null ? `${(e.confidence_score * 100).toFixed(0)}%` : 'N/A',
       ];
     });
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
@@ -260,6 +239,19 @@ export default function SupervisorValidation() {
   };
 
   const ppeResults = selectedEvent?.ppe_results || {};
+
+  const openEventDialog = (e: EventRow) => {
+    const alert = e.alerts?.[0];
+    const opVal = alert ? opValidationMap[alert.id] : null;
+    const camJp = e.cameras?.jenis_pelanggaran || opVal?.jenis_pelanggaran || 'APD_TIDAK_LENGKAP';
+    setSelectedEvent(e);
+    setFinalStatus('VALID');
+    setJenisPelanggaran(camJp);
+    const opts = getAlasanOptions(camJp, 'VALID');
+    setAlasanType(opts[0]?.value || 'LAINNYA');
+    setAlasanText('');
+    setReviseSid('__none__');
+  };
 
   return (
     <AppLayout title="Validasi Supervisor">
@@ -285,14 +277,6 @@ export default function SupervisorValidation() {
               <SelectItem value="TIDAK_VALID">Tidak Valid</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Tipe" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Tipe</SelectItem>
-              <SelectItem value="APD_VIOLATION">Pelanggaran APD</SelectItem>
-              <SelectItem value="UNKNOWN_PERSON">Orang Tidak Dikenal</SelectItem>
-            </SelectContent>
-          </Select>
           <Select value={filterZone} onValueChange={setFilterZone}>
             <SelectTrigger className="w-[140px]"><SelectValue placeholder="Zona" /></SelectTrigger>
             <SelectContent>
@@ -315,21 +299,20 @@ export default function SupervisorValidation() {
                   <TableHead>Status Operator</TableHead>
                   <TableHead>Status Final</TableHead>
                   <TableHead>Jenis Pelanggaran</TableHead>
-                  <TableHead>Confidence</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Belum ada event yang tervalidasi operator</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Belum ada event yang tervalidasi operator</TableCell></TableRow>
                 ) : filtered.map(e => {
                   const alert = e.alerts?.[0];
                   const opVal = alert ? opValidationMap[alert.id] : null;
                   const jp = getJenisPelanggaran(e);
                   const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === jp)?.label || '-';
                   return (
-                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setFinalStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid('__none__'); setJenisPelanggaran('APD_TIDAK_LENGKAP'); }}>
+                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openEventDialog(e)}>
                       <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
                       <TableCell className="font-medium text-sm">
                         {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
@@ -339,7 +322,6 @@ export default function SupervisorValidation() {
                       <TableCell>{statusBadge(opVal?.status || '-')}</TableCell>
                       <TableCell>{statusBadge(getStatus(e))}</TableCell>
                       <TableCell className="text-xs">{jpLabel}</TableCell>
-                      <TableCell className="text-xs">{renderConfidence(e.confidence_score)}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -363,7 +345,6 @@ export default function SupervisorValidation() {
                 <div><span className="text-muted-foreground">Pekerja:</span> {selectedEvent.workers ? `${selectedEvent.workers.sid} - ${selectedEvent.workers.nama}` : 'Tidak Dikenal'}</div>
                 <div><span className="text-muted-foreground">Kamera:</span> {selectedEvent.cameras?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Zona:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
-                <div><span className="text-muted-foreground">Confidence:</span> {renderConfidence(selectedEvent.confidence_score)}</div>
               </div>
 
               {/* Operator validation info */}
@@ -395,7 +376,7 @@ export default function SupervisorValidation() {
                 </div>
               )}
 
-              {/* Evidence - inline */}
+              {/* Evidence */}
               <div className="space-y-3">
                 {selectedEvent.snapshot_url && (
                   <div>
@@ -415,7 +396,6 @@ export default function SupervisorValidation() {
               <div className="border-t pt-4 space-y-3">
                 <Label className="font-medium">Validasi Final Supervisor</Label>
                 <div className="grid gap-3">
-                  {/* Revisi SID */}
                   <div className="grid gap-2">
                     <Label className="text-sm">Revisi SID (Opsional)</Label>
                     <Select value={reviseSid} onValueChange={setReviseSid}>
@@ -426,10 +406,9 @@ export default function SupervisorValidation() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* Jenis Pelanggaran */}
                   <div className="grid gap-2">
                     <Label className="text-sm">Jenis Pelanggaran</Label>
-                    <Select value={jenisPelanggaran} onValueChange={setJenisPelanggaran}>
+                    <Select value={jenisPelanggaran} onValueChange={v => { setJenisPelanggaran(v); const opts = getAlasanOptions(v, finalStatus); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
@@ -438,7 +417,7 @@ export default function SupervisorValidation() {
                   </div>
                   <div className="grid gap-2">
                     <Label className="text-sm">Status</Label>
-                    <Select value={finalStatus} onValueChange={v => { setFinalStatus(v as any); setAlasanType(v === 'VALID' ? 'APD_TIDAK_LENGKAP' : 'APD_LENGKAP'); }}>
+                    <Select value={finalStatus} onValueChange={v => { setFinalStatus(v as any); const opts = getAlasanOptions(jenisPelanggaran, v); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="VALID">Valid</SelectItem>
