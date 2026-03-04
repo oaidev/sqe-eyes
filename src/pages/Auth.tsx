@@ -36,9 +36,8 @@ const Auth = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold">COSMOS</h1>
-          <p className="text-sm text-muted-foreground">Computer Vision for Mining Operation & Safety</p>
+        <div className="text-center">
+          <img src="https://i.ibb.co.com/1fwm1sYL/logo-PROXIS-3x.png" alt="PROXIS" className="h-16 w-auto mx-auto" />
         </div>
 
         <Card className="border-border/50 shadow-sm">
@@ -73,7 +72,7 @@ const Auth = () => {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          © 2026 COSMOS - Computer Vision for Mining Operation & Safety
+          © 2026 PT Semesta Quantum Eterniti
         </p>
       </div>
     </div>
