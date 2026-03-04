@@ -19,7 +19,7 @@ import { id as idLocale } from 'date-fns/locale';
 
 const PPE_LABELS: Record<string, string> = {
   HEAD_COVER: 'Helm', HAND_COVER: 'Sarung Tangan', SAFETY_GLASSES: 'Kacamata Safety',
-  FACE_COVER: 'Kacamata Safety', SAFETY_SHOES: 'Sepatu Safety', REFLECTIVE_VEST: 'Rompi Reflektif',
+  SAFETY_SHOES: 'Sepatu Safety', REFLECTIVE_VEST: 'Rompi Reflektif',
 };
 
 const JENIS_PELANGGARAN_OPTIONS = [

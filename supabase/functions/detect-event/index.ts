@@ -82,9 +82,10 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-// AWS Rekognition only supports these 3 equipment types natively
+// AWS Rekognition PPE API supports FACE_COVER, HEAD_COVER, HAND_COVER
+// We remap FACE_COVER → SAFETY_GLASSES (kacamata/goggle detection)
 const PPE_MAP: Record<string, string> = {
-  FACE_COVER: "FACE_COVER",
+  FACE_COVER: "SAFETY_GLASSES",
   HEAD_COVER: "HEAD_COVER",
   HAND_COVER: "HAND_COVER",
 };
@@ -92,10 +93,14 @@ const PPE_MAP: Record<string, string> = {
 const PPE_LABEL: Record<string, string> = {
   HEAD_COVER: "Helm",
   HAND_COVER: "Sarung Tangan",
-  FACE_COVER: "Masker",
+  SAFETY_GLASSES: "Kacamata Safety",
   SAFETY_SHOES: "Sepatu Safety",
   REFLECTIVE_VEST: "Rompi Reflektif",
 };
+
+// Labels from DetectLabels API that map to our PPE items
+const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot"];
+const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket"];
 
 // ─── Main handler ───────────────────────────────────────────────────────────
 
@@ -260,6 +265,41 @@ Deno.serve(async (req) => {
       }
     } catch (err) {
       console.error("PPE detection failed:", err);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 2b. DetectLabels for SAFETY_SHOES and REFLECTIVE_VEST
+    // ──────────────────────────────────────────────────────────────────────
+    try {
+      const labelsBody = JSON.stringify({
+        Image: { Bytes: imageB64 },
+        MaxLabels: 50,
+        MinConfidence: 60,
+      });
+      const labelsHeaders = await signRequest("POST", endpoint, labelsBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectLabels");
+      const labelsRes = await fetch(endpoint, { method: "POST", headers: labelsHeaders, body: labelsBody });
+      const labelsData = await labelsRes.json();
+
+      console.log("DetectLabels response:", JSON.stringify(labelsData).slice(0, 500));
+
+      const detectedLabels = (labelsData.Labels || []).map((l: any) => ({
+        name: l.Name?.toLowerCase() || "",
+        confidence: l.Confidence || 0,
+      }));
+
+      // Check for safety shoes
+      const shoeLabel = detectedLabels.find((l: any) => SHOE_LABELS.some(s => l.name.includes(s)));
+      if (shoeLabel) {
+        ppeResults["SAFETY_SHOES"] = { detected: true, confidence: shoeLabel.confidence };
+      }
+
+      // Check for reflective vest
+      const vestLabel = detectedLabels.find((l: any) => VEST_LABELS.some(v => l.name.includes(v)));
+      if (vestLabel) {
+        ppeResults["REFLECTIVE_VEST"] = { detected: true, confidence: vestLabel.confidence };
+      }
+    } catch (err) {
+      console.error("DetectLabels failed:", err);
     }
 
     // ──────────────────────────────────────────────────────────────────────
