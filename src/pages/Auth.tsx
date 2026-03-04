@@ -73,7 +73,7 @@ const Auth = () => {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          © 2026 SQE COSMOS - Computer Vision for Mining Operation & Safety
+          © 2026 COSMOS - Computer Vision for Mining Operation & Safety
         </p>
       </div>
     </div>

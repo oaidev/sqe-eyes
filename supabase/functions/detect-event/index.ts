@@ -89,12 +89,6 @@ const PPE_MAP: Record<string, string> = {
   HAND_COVER: "HAND_COVER",
 };
 
-// Body part name mapping for inferring non-native PPE items
-const BODY_PART_PPE_INFERENCE: Record<string, string> = {
-  // If person detected with body parts visible, we infer these
-  // AWS doesn't detect shoes/vests natively, so we use body part coverage heuristics
-};
-
 const PPE_LABEL: Record<string, string> = {
   HEAD_COVER: "Helm",
   HAND_COVER: "Sarung Tangan",
@@ -117,11 +111,15 @@ Deno.serve(async (req) => {
     );
 
     const { camera_id, image_url, image_base64, event_type } = await req.json();
-    if (!camera_id || (!image_url && !image_base64)) {
-      return new Response(JSON.stringify({ error: "camera_id and image_url or image_base64 required" }), {
+
+    // camera_id is now optional — simulation mode when absent
+    if (!image_url && !image_base64) {
+      return new Response(JSON.stringify({ error: "image_url or image_base64 required" }), {
         status: 400, headers: corsHeaders,
       });
     }
+
+    const isSimulation = !camera_id;
 
     const region = Deno.env.get("AWS_REGION") || "ap-southeast-1";
     const accessKey = Deno.env.get("AWS_ACCESS_KEY_ID")!;
@@ -129,17 +127,21 @@ Deno.serve(async (req) => {
     const collectionId = "sqe-eyes-workers";
     const endpoint = `https://rekognition.${region}.amazonaws.com`;
 
-    // Get camera info including zone_id
-    const { data: cameraInfo, error: camErr } = await supabase
-      .from("cameras")
-      .select("zone_id, point_type")
-      .eq("id", camera_id)
-      .single();
+    // Get camera info if camera_id provided
+    let cameraInfo: { zone_id: string; point_type: string } | null = null;
+    if (camera_id) {
+      const { data: camData, error: camErr } = await supabase
+        .from("cameras")
+        .select("zone_id, point_type")
+        .eq("id", camera_id)
+        .single();
 
-    if (camErr || !cameraInfo) {
-      return new Response(JSON.stringify({ error: "Camera not found" }), {
-        status: 404, headers: corsHeaders,
-      });
+      if (camErr || !camData) {
+        return new Response(JSON.stringify({ error: "Camera not found" }), {
+          status: 404, headers: corsHeaders,
+        });
+      }
+      cameraInfo = camData;
     }
 
     // Get image bytes
@@ -154,6 +156,28 @@ Deno.serve(async (req) => {
     }
 
     const imageB64 = uint8ToBase64(imageBytes);
+
+    // Upload image to storage for evidence
+    let snapshotUrl: string | null = image_url || null;
+    if (image_base64) {
+      try {
+        const fileName = `${crypto.randomUUID()}.jpg`;
+        const { error: uploadErr } = await supabase.storage
+          .from("event-snapshots")
+          .upload(fileName, imageBytes, { contentType: "image/jpeg", upsert: false });
+
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage
+            .from("event-snapshots")
+            .getPublicUrl(fileName);
+          snapshotUrl = urlData.publicUrl;
+        } else {
+          console.error("Snapshot upload failed:", uploadErr);
+        }
+      } catch (err) {
+        console.error("Snapshot upload error:", err);
+      }
+    }
 
     // ──────────────────────────────────────────────────────────────────────
     // 1. SearchFacesByImage to identify worker
@@ -233,77 +257,50 @@ Deno.serve(async (req) => {
             }
           }
         }
-
-        // For items AWS can't detect natively (SAFETY_SHOES, REFLECTIVE_VEST),
-        // we mark them as "not detected" so zone rule validation can flag them.
-        // In production, a custom model or additional CV pipeline would detect these.
-        // For now, if the zone requires them, they'll show as violations unless
-        // we find them in the body parts analysis.
-
-        // Check if any body part hints at vest/shoes coverage
-        let hasBodyCovering = false;
-        let hasFootCovering = false;
-        for (const bp of person.BodyParts || []) {
-          if (bp.Name === "LEFT_HAND" || bp.Name === "RIGHT_HAND") {
-            // hands already handled above
-          }
-          // AWS doesn't provide foot/torso equipment — we can only infer absence
-        }
-
-        // Only add SAFETY_SHOES / REFLECTIVE_VEST to ppeResults if zone actually requires them
-        // (done below in zone rule validation step)
       }
     } catch (err) {
       console.error("PPE detection failed:", err);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 3. Query zone PPE rules and validate
+    // 3. Query zone PPE rules and validate (skip in simulation mode)
     // ──────────────────────────────────────────────────────────────────────
     const violations: string[] = [];
     let zoneRulesApplied = false;
 
-    try {
-      // Get required PPE for this zone
-      let query = supabase
-        .from("zone_ppe_rules")
-        .select("ppe_item, is_required, jabatan")
-        .eq("zone_id", cameraInfo.zone_id)
-        .eq("is_required", true);
+    if (cameraInfo) {
+      try {
+        const { data: zoneRules, error: rulesErr } = await supabase
+          .from("zone_ppe_rules")
+          .select("ppe_item, is_required, jabatan")
+          .eq("zone_id", cameraInfo.zone_id)
+          .eq("is_required", true);
 
-      const { data: zoneRules, error: rulesErr } = await query;
+        if (!rulesErr && zoneRules && zoneRules.length > 0) {
+          zoneRulesApplied = true;
 
-      if (!rulesErr && zoneRules && zoneRules.length > 0) {
-        zoneRulesApplied = true;
+          const applicableRules = zoneRules.filter((rule) => {
+            if (!rule.jabatan) return true;
+            if (workerInfo && rule.jabatan === workerInfo.jabatan) return true;
+            if (!workerInfo) return true;
+            return false;
+          });
 
-        // Filter rules by jabatan if worker is identified
-        const applicableRules = zoneRules.filter((rule) => {
-          // Rule applies to all if jabatan is null
-          if (!rule.jabatan) return true;
-          // Rule applies to specific jabatan
-          if (workerInfo && rule.jabatan === workerInfo.jabatan) return true;
-          // If worker unknown, apply all rules
-          if (!workerInfo) return true;
-          return false;
-        });
+          const requiredItems = [...new Set(applicableRules.map((r) => r.ppe_item))];
 
-        // Get unique required PPE items
-        const requiredItems = [...new Set(applicableRules.map((r) => r.ppe_item))];
-
-        for (const item of requiredItems) {
-          const result = ppeResults[item];
-          if (!result) {
-            // Item not detected at all by AWS (or not supported like SAFETY_SHOES)
-            ppeResults[item] = { detected: false, confidence: 0 };
-            violations.push(PPE_LABEL[item] || item);
-          } else if (!result.detected) {
-            // Item detected but not covering body part
-            violations.push(PPE_LABEL[item] || item);
+          for (const item of requiredItems) {
+            const result = ppeResults[item];
+            if (!result) {
+              ppeResults[item] = { detected: false, confidence: 0 };
+              violations.push(PPE_LABEL[item] || item);
+            } else if (!result.detected) {
+              violations.push(PPE_LABEL[item] || item);
+            }
           }
         }
+      } catch (err) {
+        console.error("Zone PPE rules query failed:", err);
       }
-    } catch (err) {
-      console.error("Zone PPE rules query failed:", err);
     }
 
     // Determine event type
@@ -315,12 +312,12 @@ Deno.serve(async (req) => {
     const { data: eventRecord, error: eventError } = await supabase
       .from("events")
       .insert({
-        camera_id,
+        camera_id: camera_id || null,
         worker_id: workerId,
         event_type: detectedEventType,
         confidence_score: confidenceScore,
         ppe_results: ppeResults,
-        snapshot_url: image_url || null,
+        snapshot_url: snapshotUrl,
       })
       .select()
       .single();
@@ -337,7 +334,6 @@ Deno.serve(async (req) => {
     const isUnknown = !workerId;
 
     if (isUnknown) {
-      // Unknown person alert
       alertType = "UNKNOWN_PERSON";
       const { data: alert } = await supabase
         .from("alerts")
@@ -351,7 +347,6 @@ Deno.serve(async (req) => {
       if (alert) alertId = alert.id;
       alertCreated = true;
     } else if (violations.length > 0) {
-      // APD violation alert with specific details
       alertType = "APD_VIOLATION";
       const violationNotes = `Pelanggaran APD: ${violations.join(", ")} tidak terdeteksi/tidak sesuai.`;
       const { data: alert } = await supabase
@@ -367,9 +362,8 @@ Deno.serve(async (req) => {
       alertCreated = true;
     }
 
-    // Check unauthorized exit
-    if (workerId && detectedEventType === "KELUAR" && cameraInfo.point_type === "exit") {
-      // Check if worker has valid exit permit
+    // Check unauthorized exit (only when camera info available)
+    if (workerId && cameraInfo && detectedEventType === "KELUAR" && cameraInfo.point_type === "exit") {
       const { data: permits } = await supabase
         .from("exit_permits")
         .select("id")
@@ -409,6 +403,7 @@ Deno.serve(async (req) => {
         alert_type: alertType,
         violations,
         zone_rules_applied: zoneRulesApplied,
+        snapshot_url: snapshotUrl,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
