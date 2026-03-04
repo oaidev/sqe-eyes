@@ -169,11 +169,11 @@ export default function SupervisorValidation() {
 
   const getJenisPelanggaran = (e: EventRow) => {
     const alert = e.alerts?.[0];
-    if (!alert) return null;
+    if (!alert) return e.cameras?.jenis_pelanggaran || null;
     const sup = supValidationMap[alert.id];
     if (sup?.jenis_pelanggaran) return sup.jenis_pelanggaran;
     const op = opValidationMap[alert.id];
-    return op?.jenis_pelanggaran || null;
+    return op?.jenis_pelanggaran || e.cameras?.jenis_pelanggaran || null;
   };
 
   const alasanOptions = getAlasanOptions(jenisPelanggaran, finalStatus);
