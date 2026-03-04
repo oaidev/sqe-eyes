@@ -10,8 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Search, Upload, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Search, Upload, Pencil, Trash2, Loader2, Camera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { EnrollFaceDialog } from '@/components/workers/EnrollFaceDialog';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 
 type Worker = Tables<'workers'>;
@@ -34,6 +35,7 @@ export default function Workers() {
   const [editing, setEditing] = useState<Worker | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [enrollWorker, setEnrollWorker] = useState<Worker | null>(null);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['workers'],
@@ -200,6 +202,7 @@ export default function Workers() {
                       <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? 'Aktif' : 'Tidak Aktif'}</Badge></TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEnrollWorker(w)} title="Daftarkan Wajah"><Camera className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>
                         </div>
@@ -296,6 +299,9 @@ export default function Workers() {
           {photoPreview && <img src={photoPreview} alt="Face" className="w-full rounded-lg" />}
         </DialogContent>
       </Dialog>
+
+      {/* Enroll Face Dialog */}
+      <EnrollFaceDialog worker={enrollWorker} open={!!enrollWorker} onOpenChange={(v) => { if (!v) setEnrollWorker(null); }} />
     </AppLayout>
   );
 }
