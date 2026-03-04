@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import logo from '@/assets/logo.png';
 
 type AppRole = 'admin' | 'operator' | 'supervisor';
 
@@ -70,12 +69,9 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r-0">
       <SidebarHeader className="p-4">
-        <div className="flex items-center gap-3">
-          <img src={logo} alt="SQE Eyes" className="h-9 w-auto" />
-          <div>
-            <h2 className="text-sm font-semibold text-sidebar-foreground">SQE Eyes</h2>
-            <p className="text-xs text-sidebar-foreground/60">Safety Monitoring</p>
-          </div>
+        <div className="flex flex-col">
+          <h2 className="text-sm font-bold text-sidebar-foreground">COSMOS</h2>
+          <p className="text-[10px] text-sidebar-foreground/60">Computer Vision for Mining Operation & Safety</p>
         </div>
       </SidebarHeader>
 

@@ -17,19 +17,17 @@ import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 
 type Worker = Tables<'workers'>;
 
-const SHIFTS = ['day', 'night'] as const;
 const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
 const DEPT_OPTIONS = ['Maintenance', 'Produksi', 'SHE', 'Plant', 'Logistik', 'Engineering', 'HRD'];
 
-type FormState = { sid: string; nama: string; jabatan: string; departemen: string; shift: 'day' | 'night'; is_active: boolean };
-const emptyForm: FormState = { sid: '', nama: '', jabatan: '', departemen: '', shift: 'day', is_active: true };
+type FormState = { sid: string; nama: string; jabatan: string; departemen: string; is_active: boolean };
+const emptyForm: FormState = { sid: '', nama: '', jabatan: '', departemen: '', is_active: true };
 
 export default function Workers() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [filterDept, setFilterDept] = useState('all');
-  const [filterShift, setFilterShift] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<Worker | null>(null);
   const [editing, setEditing] = useState<Worker | null>(null);
@@ -60,10 +58,10 @@ export default function Workers() {
   const saveMutation = useMutation({
     mutationFn: async (values: FormState) => {
       if (editing) {
-        const { error } = await supabase.from('workers').update({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, shift: values.shift, is_active: values.is_active }).eq('id', editing.id);
+        const { error } = await supabase.from('workers').update({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, is_active: values.is_active }).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('workers').insert({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, shift: values.shift, is_active: values.is_active });
+        const { error } = await supabase.from('workers').insert({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, is_active: values.is_active });
         if (error) throw error;
       }
     },
@@ -96,7 +94,7 @@ export default function Workers() {
       const row: any = {};
       headers.forEach((h, idx) => { row[h] = cols[idx]; });
       if (row.sid && row.nama && row.jabatan && row.departemen) {
-        rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, shift: (row.shift === 'night' ? 'night' : 'day') as any });
+        rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen });
       }
     }
     if (rows.length === 0) { toast({ title: 'CSV kosong atau format salah', variant: 'destructive' }); return; }
@@ -109,7 +107,7 @@ export default function Workers() {
 
   const openEdit = (w: Worker) => {
     setEditing(w);
-    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen, shift: w.shift === 'night' ? 'night' : 'day', is_active: w.is_active });
+    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen, is_active: w.is_active });
     setDialogOpen(true);
   };
 
@@ -118,8 +116,7 @@ export default function Workers() {
   const filtered = workers.filter(w => {
     const matchSearch = !search || w.nama.toLowerCase().includes(search.toLowerCase()) || w.sid.toLowerCase().includes(search.toLowerCase());
     const matchDept = filterDept === 'all' || w.departemen === filterDept;
-    const matchShift = filterShift === 'all' || w.shift === filterShift;
-    return matchSearch && matchDept && matchShift;
+    return matchSearch && matchDept;
   });
 
   return (
@@ -136,13 +133,6 @@ export default function Workers() {
               <SelectContent>
                 <SelectItem value="all">Semua Dept</SelectItem>
                 {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filterShift} onValueChange={setFilterShift}>
-              <SelectTrigger className="w-[120px]"><SelectValue placeholder="Shift" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Shift</SelectItem>
-                {SHIFTS.map(s => <SelectItem key={s} value={s} className="capitalize">{s === 'day' ? 'Day' : 'Night'}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -164,16 +154,15 @@ export default function Workers() {
                   <TableHead>Nama</TableHead>
                   <TableHead>Jabatan</TableHead>
                   <TableHead>Departemen</TableHead>
-                  <TableHead>Shift</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[80px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Tidak ada data pekerja</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Tidak ada data pekerja</TableCell></TableRow>
                 ) : filtered.map(w => {
                   const faceUrl = faceMap.get(w.id);
                   return (
@@ -182,23 +171,15 @@ export default function Workers() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {faceUrl ? (
-                            <img
-                              src={faceUrl}
-                              alt={w.nama}
-                              className="h-8 w-8 rounded-full object-cover cursor-pointer border"
-                              onClick={(e) => { e.stopPropagation(); setPhotoPreview(faceUrl); }}
-                            />
+                            <img src={faceUrl} alt={w.nama} className="h-8 w-8 rounded-full object-cover cursor-pointer border" onClick={(e) => { e.stopPropagation(); setPhotoPreview(faceUrl); }} />
                           ) : (
-                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">
-                              {w.nama.substring(0, 2).toUpperCase()}
-                            </div>
+                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">{w.nama.substring(0, 2).toUpperCase()}</div>
                           )}
                           <span className="font-medium">{w.nama}</span>
                         </div>
                       </TableCell>
                       <TableCell>{w.jabatan}</TableCell>
                       <TableCell>{w.departemen}</TableCell>
-                      <TableCell className="capitalize">{w.shift === 'day' ? 'Day' : 'Night'}</TableCell>
                       <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? 'Aktif' : 'Tidak Aktif'}</Badge></TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -230,28 +211,14 @@ export default function Workers() {
               <Label>Jabatan</Label>
               <Select value={form.jabatan} onValueChange={v => setForm({ ...form, jabatan: v })}>
                 <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
-                <SelectContent>
-                  {JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}
-                </SelectContent>
+                <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
               <Label>Departemen</Label>
               <Select value={form.departemen} onValueChange={v => setForm({ ...form, departemen: v })}>
                 <SelectTrigger><SelectValue placeholder="Pilih departemen" /></SelectTrigger>
-                <SelectContent>
-                  {DEPT_OPTIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Shift</Label>
-              <Select value={form.shift} onValueChange={v => setForm({ ...form, shift: v as any })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="day">Day</SelectItem>
-                  <SelectItem value="night">Night</SelectItem>
-                </SelectContent>
+                <SelectContent>{DEPT_OPTIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">

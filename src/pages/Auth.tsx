@@ -8,17 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
-import logo from '@/assets/logo.png';
 
 const Auth = () => {
-  const { user, loading } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
+  const { user, loading, signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { signIn, signUp } = useAuth();
 
   if (loading) return <LoadingScreen />;
   if (user) return <Navigate to="/" replace />;
@@ -27,15 +23,9 @@ const Auth = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) throw error;
-        toast.success('Berhasil masuk!');
-      } else {
-        const { error } = await signUp(email, password, fullName);
-        if (error) throw error;
-        toast.success('Akun berhasil dibuat! Silakan cek email untuk verifikasi.');
-      }
+      const { error } = await signIn(email, password);
+      if (error) throw error;
+      toast.success('Berhasil masuk!');
     } catch (err: any) {
       toast.error(err.message || 'Terjadi kesalahan');
     } finally {
@@ -47,88 +37,40 @@ const Auth = () => {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
-          <img src={logo} alt="SQE Eyes" className="mx-auto h-20 w-auto" />
-          <p className="text-sm text-muted-foreground">
-            Safety Monitoring System — PT Bukit Makmur Mandiri Utama
-          </p>
+          <h1 className="text-2xl font-bold">COSMOS</h1>
+          <p className="text-sm text-muted-foreground">Computer Vision for Mining Operation & Safety</p>
         </div>
 
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl">{isLogin ? 'Masuk' : 'Daftar Akun'}</CardTitle>
-            <CardDescription>
-              {isLogin
-                ? 'Masukkan kredensial untuk mengakses sistem'
-                : 'Buat akun baru untuk mulai menggunakan SQE Eyes'}
-            </CardDescription>
+            <CardTitle className="text-xl">Masuk</CardTitle>
+            <CardDescription>Masukkan kredensial untuk mengakses sistem</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Nama Lengkap</Label>
-                  <Input
-                    id="fullName"
-                    placeholder="Nama lengkap Anda"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                  />
-                </div>
-              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="nama@perusahaan.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
+                <Input id="email" type="email" placeholder="nama@perusahaan.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Masukkan password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
+                  <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="Masukkan password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isLogin ? 'Masuk' : 'Daftar'}
+                Masuk
               </Button>
             </form>
-            <div className="mt-4 text-center text-sm">
-              <span className="text-muted-foreground">
-                {isLogin ? 'Belum punya akun?' : 'Sudah punya akun?'}{' '}
-              </span>
-              <button
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-primary font-medium hover:underline"
-              >
-                {isLogin ? 'Daftar' : 'Masuk'}
-              </button>
-            </div>
           </CardContent>
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          © 2024 SQE Eyes — Berau Coal Operations
+          © 2026 SQE COSMOS - Computer Vision for Mining Operation & Safety
         </p>
       </div>
     </div>

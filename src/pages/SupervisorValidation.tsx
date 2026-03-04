@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert, Image, Video } from 'lucide-react';
+import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -22,10 +22,15 @@ const PPE_LABELS: Record<string, string> = {
   FACE_COVER: 'Kacamata Safety', SAFETY_SHOES: 'Sepatu Safety', REFLECTIVE_VEST: 'Rompi Reflektif',
 };
 
-const ALASAN_OPTIONS = [
+const ALASAN_VALID = [
   { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
-  { value: 'SUDAH_IZIN', label: 'Sudah Izin' },
-  { value: 'LAINNYA', label: 'Lainnya' },
+  { value: 'TIDAK_ADA_IZIN', label: 'Tidak Ada Izin' },
+  { value: 'LAINNYA', label: 'Alasan Lainnya' },
+];
+const ALASAN_TIDAK_VALID = [
+  { value: 'APD_LENGKAP', label: 'APD Lengkap' },
+  { value: 'SUDAH_IZIN', label: 'Sudah Ada Izin' },
+  { value: 'LAINNYA', label: 'Alasan Lainnya' },
 ];
 
 interface EventRow {
@@ -65,11 +70,11 @@ export default function SupervisorValidation() {
   const [filterZone, setFilterZone] = useState('all');
   const [filterCamera, setFilterCamera] = useState('all');
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
-  const [overrideStatus, setOverrideStatus] = useState<'VALID' | 'TIDAK_VALID'>('VALID');
+  const [finalStatus, setFinalStatus] = useState<'VALID' | 'TIDAK_VALID'>('VALID');
   const [alasanType, setAlasanType] = useState('APD_TIDAK_LENGKAP');
   const [alasanText, setAlasanText] = useState('');
+  const [reviseSid, setReviseSid] = useState('');
 
-  // Get all validations done by operators
   const { data: operatorValidations = [] } = useQuery({
     queryKey: ['all-validations'],
     queryFn: async () => {
@@ -85,7 +90,6 @@ export default function SupervisorValidation() {
     return map;
   }, [operatorValidations]);
 
-  // Get supervisor overrides
   const { data: supervisorValidations = [] } = useQuery({
     queryKey: ['supervisor-validations'],
     queryFn: async () => {
@@ -123,12 +127,22 @@ export default function SupervisorValidation() {
     queryFn: async () => { const { data } = await supabase.from('cameras').select('id, name'); return data || []; },
   });
 
-  // Only show events that have been validated by operator
+  const { data: allWorkers = [] } = useQuery({
+    queryKey: ['workers-for-revision'],
+    queryFn: async () => {
+      const { data } = await supabase.from('workers').select('id, sid, nama').eq('is_active', true).order('sid');
+      return data || [];
+    },
+  });
+
   const filtered = useMemo(() => {
     return events.filter(e => {
       const alert = e.alerts?.[0];
       if (!alert || !validatedAlertIds.has(alert.id)) return false;
-      if (searchSid && !e.workers?.sid?.toLowerCase().includes(searchSid.toLowerCase())) return false;
+      if (searchSid) {
+        const q = searchSid.toLowerCase();
+        if (!e.workers?.sid?.toLowerCase().includes(q) && !e.workers?.nama?.toLowerCase().includes(q)) return false;
+      }
       const opVal = opValidationMap[alert.id];
       const supVal = supValidationMap[alert.id];
       const currentStatus = supVal?.status || opVal?.status || 'BARU';
@@ -149,15 +163,22 @@ export default function SupervisorValidation() {
     return op?.status || 'BARU';
   };
 
-  const submitOverride = useMutation({
+  const alasanOptions = finalStatus === 'VALID' ? ALASAN_VALID : ALASAN_TIDAK_VALID;
+
+  const submitFinal = useMutation({
     mutationFn: async () => {
       if (!selectedEvent || !user) return;
       const alert = selectedEvent.alerts?.[0];
       if (!alert) throw new Error('Tidak ada alert');
+
+      if (reviseSid) {
+        await supabase.from('events').update({ worker_id: reviseSid } as any).eq('id', selectedEvent.id);
+      }
+
       const { error } = await supabase.from('supervisor_validations').insert({
         alert_id: alert.id,
         supervisor_id: user.id,
-        status: overrideStatus,
+        status: finalStatus,
         validation_level: 'supervisor',
         alasan_type: alasanType as any,
         alasan_text: alasanType === 'LAINNYA' ? alasanText : null,
@@ -165,8 +186,9 @@ export default function SupervisorValidation() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: 'Override validasi disimpan' });
+      toast({ title: 'Validasi final disimpan' });
       qc.invalidateQueries({ queryKey: ['supervisor-validations'] });
+      qc.invalidateQueries({ queryKey: ['supervisor-events'] });
       setSelectedEvent(null);
     },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
@@ -174,8 +196,8 @@ export default function SupervisorValidation() {
 
   const statusBadge = (status: string) => {
     switch (status) {
-      case 'VALID': return <Badge className="bg-primary text-primary-foreground">Valid</Badge>;
-      case 'TIDAK_VALID': return <Badge variant="destructive">Tidak Valid</Badge>;
+      case 'VALID': return <Badge variant="destructive">Valid</Badge>;
+      case 'TIDAK_VALID': return <Badge variant="outline">Tidak Valid</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
   };
@@ -207,7 +229,7 @@ export default function SupervisorValidation() {
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Event Tervalidasi</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Override Supervisor</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-warning" />{supervisorValidations.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Final Supervisor</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{supervisorValidations.length}</div></CardContent></Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -216,7 +238,7 @@ export default function SupervisorValidation() {
           <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-[150px]" />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Cari SID..." value={searchSid} onChange={e => setSearchSid(e.target.value)} className="pl-8 w-[140px]" />
+            <Input placeholder="Cari SID/Nama..." value={searchSid} onChange={e => setSearchSid(e.target.value)} className="pl-8 w-[160px]" />
           </div>
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-[130px]"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -268,14 +290,16 @@ export default function SupervisorValidation() {
                   const alert = e.alerts?.[0];
                   const opVal = alert ? opValidationMap[alert.id] : null;
                   return (
-                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setOverrideStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); }}>
+                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setFinalStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid(''); }}>
                       <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
-                      <TableCell className="font-medium text-sm">{e.workers?.nama || <span className="text-destructive">Tidak Dikenal</span>}</TableCell>
+                      <TableCell className="font-medium text-sm">
+                        {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
+                      </TableCell>
                       <TableCell className="text-sm">{e.cameras?.name || '-'}</TableCell>
                       <TableCell className="text-sm">{e.cameras?.zones?.name || '-'}</TableCell>
                       <TableCell>{statusBadge(opVal?.status || '-')}</TableCell>
                       <TableCell>{statusBadge(getStatus(e))}</TableCell>
-                      <TableCell><Badge variant={alert ? 'destructive' : 'secondary'} className="text-[10px]">{alert?.alert_type === 'APD_VIOLATION' ? 'APD' : alert?.alert_type === 'UNKNOWN_PERSON' ? 'Unknown' : '-'}</Badge></TableCell>
+                      <TableCell><Badge variant="secondary" className="text-[10px]">{alert?.alert_type === 'APD_VIOLATION' ? 'APD' : alert?.alert_type === 'UNKNOWN_PERSON' ? 'Unknown' : '-'}</Badge></TableCell>
                       <TableCell className="text-xs">{e.confidence_score ? `${(e.confidence_score * 100).toFixed(0)}%` : '-'}</TableCell>
                     </TableRow>
                   );
@@ -286,19 +310,18 @@ export default function SupervisorValidation() {
         </Card>
       </div>
 
-      {/* Detail / Override Dialog */}
+      {/* Detail / Final Dialog */}
       <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detail & Override Validasi</DialogTitle>
-            <DialogDescription>Override validasi operator jika diperlukan</DialogDescription>
+            <DialogTitle>Detail & Validasi Final</DialogTitle>
+            <DialogDescription>Validasi final supervisor jika diperlukan</DialogDescription>
           </DialogHeader>
           {selectedEvent && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Waktu:</span> {format(new Date(selectedEvent.detected_at), 'dd MMM yyyy HH:mm:ss', { locale: idLocale })}</div>
-                <div><span className="text-muted-foreground">Pekerja:</span> {selectedEvent.workers?.nama || 'Tidak Dikenal'}</div>
-                <div><span className="text-muted-foreground">SID:</span> {selectedEvent.workers?.sid || '-'}</div>
+                <div><span className="text-muted-foreground">Pekerja:</span> {selectedEvent.workers ? `${selectedEvent.workers.sid} - ${selectedEvent.workers.nama}` : 'Tidak Dikenal'}</div>
                 <div><span className="text-muted-foreground">Kamera:</span> {selectedEvent.cameras?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Zona:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Confidence:</span> {selectedEvent.confidence_score ? `${(selectedEvent.confidence_score * 100).toFixed(0)}%` : '-'}</div>
@@ -328,18 +351,40 @@ export default function SupervisorValidation() {
                 </div>
               )}
 
-              <div className="flex gap-3">
-                {selectedEvent.snapshot_url && <a href={selectedEvent.snapshot_url} target="_blank" rel="noopener noreferrer" download><Button variant="outline" size="sm"><Image className="mr-1 h-4 w-4" />Foto</Button></a>}
-                {selectedEvent.clip_url && <a href={selectedEvent.clip_url} target="_blank" rel="noopener noreferrer" download><Button variant="outline" size="sm"><Video className="mr-1 h-4 w-4" />Video</Button></a>}
+              {/* Evidence - inline */}
+              <div className="space-y-3">
+                {selectedEvent.snapshot_url && (
+                  <div>
+                    <Label className="text-sm font-medium">Foto Evidence</Label>
+                    <img src={selectedEvent.snapshot_url} alt="Snapshot" className="mt-1 rounded-lg border max-h-64 object-contain w-full" />
+                  </div>
+                )}
+                {selectedEvent.clip_url && (
+                  <div>
+                    <Label className="text-sm font-medium">Video Evidence</Label>
+                    <video src={selectedEvent.clip_url} controls className="mt-1 rounded-lg border max-h-64 w-full" />
+                  </div>
+                )}
               </div>
 
-              {/* Override form */}
+              {/* Final form */}
               <div className="border-t pt-4 space-y-3">
-                <Label className="font-medium">Override Validasi Supervisor</Label>
+                <Label className="font-medium">Validasi Final Supervisor</Label>
                 <div className="grid gap-3">
+                  {/* Revisi SID */}
+                  <div className="grid gap-2">
+                    <Label className="text-sm">Revisi SID (Opsional)</Label>
+                    <Select value={reviseSid} onValueChange={setReviseSid}>
+                      <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Tidak ada revisi</SelectItem>
+                        {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="grid gap-2">
                     <Label className="text-sm">Status</Label>
-                    <Select value={overrideStatus} onValueChange={v => setOverrideStatus(v as any)}>
+                    <Select value={finalStatus} onValueChange={v => { setFinalStatus(v as any); setAlasanType(v === 'VALID' ? 'APD_TIDAK_LENGKAP' : 'APD_LENGKAP'); }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="VALID">Valid</SelectItem>
@@ -352,7 +397,7 @@ export default function SupervisorValidation() {
                     <Select value={alasanType} onValueChange={setAlasanType}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {ALASAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                        {alasanOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -368,9 +413,9 @@ export default function SupervisorValidation() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedEvent(null)}>Tutup</Button>
-            <Button onClick={() => submitOverride.mutate()} disabled={submitOverride.isPending}>
-              {submitOverride.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              Simpan Override
+            <Button onClick={() => submitFinal.mutate()} disabled={submitFinal.isPending}>
+              {submitFinal.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              Simpan Final
             </Button>
           </DialogFooter>
         </DialogContent>
