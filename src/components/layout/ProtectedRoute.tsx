@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { type AppRole, type PageKey, canAccess } from '@/lib/permissions';
+import { type PageKey, canAccess } from '@/lib/permissions';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 interface ProtectedRouteProps {
   page: PageKey;
@@ -10,13 +11,7 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ page, children }: ProtectedRouteProps) {
   const { user, userRole, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   if (!user) {
     return <Navigate to="/auth" replace />;

@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Eye, EyeOff, Shield, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import logo from '@/assets/logo.png';
 
 const Auth = () => {
   const { user, loading } = useAuth();
@@ -18,14 +20,7 @@ const Auth = () => {
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
+  if (loading) return <LoadingScreen />;
   if (user) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -51,12 +46,8 @@ const Auth = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md space-y-6">
-        {/* Logo & Branding */}
         <div className="text-center space-y-2">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-            <Shield className="h-7 w-7" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">SQE Eyes</h1>
+          <img src={logo} alt="SQE Eyes" className="mx-auto h-20 w-auto" />
           <p className="text-sm text-muted-foreground">
             Safety Monitoring System — PT Bukit Makmur Mandiri Utama
           </p>

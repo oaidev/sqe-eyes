@@ -13,10 +13,8 @@ import {
   SidebarFooter,
 } from '@/components/ui/sidebar';
 import {
-  Shield,
   LayoutDashboard,
   Users,
-  Camera,
   MapPin,
   ShieldCheck,
   KeyRound,
@@ -28,6 +26,7 @@ import {
   BarChart3,
   LogOut,
   ChevronDown,
+  Shield,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -36,6 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import logo from '@/assets/logo.png';
 
 type AppRole = 'admin' | 'operator' | 'supervisor' | 'safety_manager';
 
@@ -108,9 +108,7 @@ export function AppSidebar() {
     <Sidebar className="border-r-0">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-            <Shield className="h-5 w-5" />
-          </div>
+          <img src={logo} alt="SQE Eyes" className="h-9 w-auto" />
           <div>
             <h2 className="text-sm font-semibold text-sidebar-foreground">SQE Eyes</h2>
             <p className="text-xs text-sidebar-foreground/60">Safety Monitoring</p>

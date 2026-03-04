@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { Separator } from '@/components/ui/separator';
-import { Loader2 } from 'lucide-react';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -14,14 +14,7 @@ interface AppLayoutProps {
 export function AppLayout({ children, title }: AppLayoutProps) {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
+  if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
 
   return (
