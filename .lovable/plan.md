@@ -1,88 +1,74 @@
 
 
-# Analisis End-to-End & Rencana User Management + RBAC
+## Plan: Dashboard Chart Fix, Camera Redesign, Remove Confidence, Validation Logic Update
 
-## Status Fitur Saat Ini
+### 1. Dashboard Chart — Match Cards (Sudah/Belum Divalidasi)
 
-| Fitur | Status | Catatan |
-|-------|--------|---------|
-| Auth (Login/Register) | ✅ Berfungsi | Login, register, logout bekerja |
-| Dashboard | ✅ Berfungsi | Statistik real-time |
-| Kelola Pekerja | ✅ Berfungsi | CRUD + CSV import + face enrollment |
-| Zona & Kamera | ✅ Berfungsi | CRUD zona dan kamera |
-| Aturan APD | ✅ Berfungsi | Matriks toggle per zona |
-| Aturan Akses | ✅ Berfungsi | CRUD aturan akses zona |
-| Live Kamera | ✅ Berfungsi | Grid kamera + simulasi deteksi |
-| Event Terkini | ✅ Berfungsi | Realtime + detail APD |
-| Inbox Alert | ✅ Berfungsi | Filter, teruskan, catatan |
-| Validasi Alert | ✅ Berfungsi | Form validasi supervisor |
-| Izin Keluar | ✅ Berfungsi | Buat + approve/reject |
-| Laporan Kepatuhan | ✅ Berfungsi | Chart bar + pie |
-| Rekap Pelanggaran | ✅ Berfungsi | Group by worker |
-| Ekspor Laporan | ⚠️ Parsial | Hanya insert record, tidak generate file |
-| **Kelola Pengguna** | ❌ Tidak ada | Tidak ada halaman user management |
-| **CRUD Role** | ❌ Tidak ada | Tidak ada UI assign/ubah/hapus role |
-| **Route Protection** | ❌ Tidak ada | Semua halaman bisa diakses via URL langsung |
-| **Permission per Menu** | ❌ Tidak ada | Sidebar filter saja, halaman tidak cek role |
+Currently the chart shows "Valid" vs "Tidak Valid" from `supervisor_validations.status`. The cards show "Sudah Divalidasi" (alerts with any validation) vs "Belum Divalidasi" (alerts without).
 
-## Yang Perlu Dibangun
+**Fix**: Change chart to count alerts per day that have/don't have validations, matching the card logic. Query `alerts` grouped by day, cross-reference with `supervisor_validations` to split into "Sudah Divalidasi" and "Belum Divalidasi".
 
-### 1. Halaman "Kelola Pengguna" (`/users`)
-Halaman admin-only untuk:
-- **Daftar semua user** — email, nama, role, status (dari `profiles` + `user_roles`)
-- **Invite user baru** — form email + role, panggil `supabase.auth.admin.inviteUserByEmail()` via edge function (karena admin API tidak bisa dipanggil dari client)
-- **Ubah role** — dropdown ganti role (admin/operator/supervisor/safety_manager)
-- **Hapus user** — soft-delete atau remove dari sistem via edge function
-- **Tampilkan user tanpa role** — highlight user yang belum di-assign role
+**File**: `src/pages/Index.tsx`
 
-### 2. Edge Function `manage-users`
-Diperlukan karena operasi admin (invite, delete user, list users) membutuhkan `service_role_key`:
-- `POST /invite` — invite user by email + assign role
-- `POST /update-role` — update role user
-- `POST /delete-user` — delete user dari auth + cleanup
-- `GET /list` — list semua user dengan profile & role
+### 2. Remove ALL Confidence Scores from Web
 
-### 3. Role-Based Route Protection
-Saat ini sidebar menyembunyikan menu, tapi user bisa ketik URL langsung dan tetap masuk. Perlu:
-- Komponen `<ProtectedRoute roles={['admin']}>` yang wrap halaman
-- Redirect ke dashboard jika role tidak sesuai
-- Tambahkan di setiap route di `App.tsx`
+Remove confidence column, rendering, and references from:
+- `src/pages/OperatorValidation.tsx` — table column, detail dialog, CSV export, `renderConfidence` function
+- `src/pages/SupervisorValidation.tsx` — same
+- `src/pages/Simulate.tsx` — confidence badge in results panel
+- Remove `confidence` from `DetectionResult` interface in Simulate
 
-### 4. Permission Granular per Menu (View/Edit/Delete)
-Definisi permission matrix di kode:
+### 3. Camera Dialog Redesign (Zones.tsx)
 
-```text
-Menu                  | admin | operator | supervisor | safety_manager
-──────────────────────|───────|──────────|────────────|───────────────
-Dashboard             | view  | view     | view       | view
-Kelola Pekerja        | full  | —        | —          | —
-Zona & Kamera         | full  | —        | —          | —
-Aturan APD            | full  | —        | —          | —
-Aturan Akses          | full  | —        | —          | —
-Kelola Pengguna       | full  | —        | —          | —
-Live Kamera           | full  | view     | —          | —
-Event Terkini         | full  | view     | —          | —
-Inbox Alert           | full  | edit     | —          | —
-Validasi Alert        | full  | —        | edit       | —
-Izin Keluar           | full  | —        | edit       | —
-Laporan Kepatuhan     | view  | —        | —          | view
-Rekap Pelanggaran     | view  | —        | —          | view
-Ekspor Laporan        | full  | —        | —          | edit
-```
+Replace "Tipe" and "Model Deteksi" sections with:
+- **Jenis Pelanggaran** dropdown: "APD Tidak Lengkap" or "Keluar Tanpa Izin"
+- If "APD Tidak Lengkap" → show APD Matrix (general + per jabatan) below
+- If "Keluar Tanpa Izin" → show Waktu Kamera Off below
+- Remove `point_type` selector and `detection_models` checkboxes from dialog
+- Camera list table: replace "Tipe" column with "Jenis Pelanggaran"
 
-### File yang Diubah/Dibuat
+**DB migration**: Add `jenis_pelanggaran` column to `cameras` table to store "APD_TIDAK_LENGKAP" or "KELUAR_TANPA_IZIN". Keep `point_type` for backward compat but derive it from jenis_pelanggaran (KELUAR_TANPA_IZIN → exit, APD_TIDAK_LENGKAP → area).
 
-1. **`supabase/functions/manage-users/index.ts`** — Edge function baru untuk admin user operations
-2. **`src/pages/Users.tsx`** — Halaman baru kelola pengguna
-3. **`src/components/layout/ProtectedRoute.tsx`** — Komponen route guard
-4. **`src/App.tsx`** — Tambah route `/users` + wrap semua route dengan ProtectedRoute
-5. **`src/components/layout/AppSidebar.tsx`** — Tambah menu "Kelola Pengguna"
-6. **`src/lib/permissions.ts`** — Permission matrix & helper `canAccess(role, page, action)`
-7. **Database migration** — Update RLS policy pada `profiles` agar admin bisa lihat semua profile
+### 4. Simulation Requires Camera Selection
 
-### Alur Invite User
-1. Admin buka `/users` → klik "Invite User"
-2. Isi email + pilih role → panggil edge function `manage-users/invite`
-3. Edge function: `supabase.auth.admin.inviteUserByEmail()` + insert ke `user_roles`
-4. User terima email → klik link → set password → login dengan role yang sudah di-assign
+Add a camera dropdown (mandatory) to the Simulate page. Send `camera_id` with the detection request so the edge function can determine jenis_pelanggaran from camera config and apply zone PPE rules.
+
+**File**: `src/pages/Simulate.tsx` — add camera query + dropdown before capture
+
+### 5. Validation Alasan Logic (Operator + Supervisor)
+
+Change jenis pelanggaran options to only 2: "APD Tidak Lengkap" and "Keluar Tanpa Izin".
+
+Conditional alasan logic based on jenis_pelanggaran + status:
+- APD Tidak Lengkap + Valid → ["APD Tidak Lengkap", "Alasan Lainnya"]
+- APD Tidak Lengkap + Tidak Valid → ["APD Lengkap", "Alasan Lainnya"]
+- Keluar Tanpa Izin + Valid → ["Tidak Ada Izin", "Alasan Lainnya"]
+- Keluar Tanpa Izin + Tidak Valid → ["Sudah Ada Izin", "Alasan Lainnya"]
+
+**Files**: `src/pages/OperatorValidation.tsx`, `src/pages/SupervisorValidation.tsx`
+
+### 6. Remove "Tipe" from Validation List & Filters
+
+Remove:
+- `filterType` state and "Tipe" filter dropdown
+- "Tipe" column from table headers and rows
+- "Tipe" from CSV export
+- "Tipe" from detail dialog
+
+**Files**: `src/pages/OperatorValidation.tsx`, `src/pages/SupervisorValidation.tsx`
+
+---
+
+### Summary
+
+| Area | Files Changed |
+|------|--------------|
+| Dashboard chart | `Index.tsx` |
+| Remove confidence | `OperatorValidation.tsx`, `SupervisorValidation.tsx`, `Simulate.tsx` |
+| Camera redesign | `Zones.tsx` + DB migration (add `jenis_pelanggaran` to cameras) |
+| Simulate camera required | `Simulate.tsx` |
+| Validation alasan logic | `OperatorValidation.tsx`, `SupervisorValidation.tsx` |
+| Remove tipe filter/column | `OperatorValidation.tsx`, `SupervisorValidation.tsx` |
+
+**DB Migration**: `ALTER TABLE cameras ADD COLUMN jenis_pelanggaran text DEFAULT 'APD_TIDAK_LENGKAP';`
 
