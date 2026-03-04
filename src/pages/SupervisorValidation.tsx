@@ -174,7 +174,7 @@ export default function SupervisorValidation() {
 
   const statusBadge = (status: string) => {
     switch (status) {
-      case 'VALID': return <Badge className="bg-green-600 text-white">Valid</Badge>;
+      case 'VALID': return <Badge className="bg-primary text-primary-foreground">Valid</Badge>;
       case 'TIDAK_VALID': return <Badge variant="destructive">Tidak Valid</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
