@@ -268,6 +268,41 @@ Deno.serve(async (req) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // 2b. DetectLabels for SAFETY_SHOES and REFLECTIVE_VEST
+    // ──────────────────────────────────────────────────────────────────────
+    try {
+      const labelsBody = JSON.stringify({
+        Image: { Bytes: imageB64 },
+        MaxLabels: 50,
+        MinConfidence: 60,
+      });
+      const labelsHeaders = await signRequest("POST", endpoint, labelsBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectLabels");
+      const labelsRes = await fetch(endpoint, { method: "POST", headers: labelsHeaders, body: labelsBody });
+      const labelsData = await labelsRes.json();
+
+      console.log("DetectLabels response:", JSON.stringify(labelsData).slice(0, 500));
+
+      const detectedLabels = (labelsData.Labels || []).map((l: any) => ({
+        name: l.Name?.toLowerCase() || "",
+        confidence: l.Confidence || 0,
+      }));
+
+      // Check for safety shoes
+      const shoeLabel = detectedLabels.find((l: any) => SHOE_LABELS.some(s => l.name.includes(s)));
+      if (shoeLabel) {
+        ppeResults["SAFETY_SHOES"] = { detected: true, confidence: shoeLabel.confidence };
+      }
+
+      // Check for reflective vest
+      const vestLabel = detectedLabels.find((l: any) => VEST_LABELS.some(v => l.name.includes(v)));
+      if (vestLabel) {
+        ppeResults["REFLECTIVE_VEST"] = { detected: true, confidence: vestLabel.confidence };
+      }
+    } catch (err) {
+      console.error("DetectLabels failed:", err);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // 3. Query zone PPE rules and validate (skip in simulation mode)
     // ──────────────────────────────────────────────────────────────────────
     const violations: string[] = [];
