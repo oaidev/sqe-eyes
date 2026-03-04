@@ -151,7 +151,7 @@ export type Database = {
       }
       events: {
         Row: {
-          camera_id: string
+          camera_id: string | null
           clip_url: string | null
           confidence_score: number | null
           created_at: string
@@ -163,7 +163,7 @@ export type Database = {
           worker_id: string | null
         }
         Insert: {
-          camera_id: string
+          camera_id?: string | null
           clip_url?: string | null
           confidence_score?: number | null
           created_at?: string
@@ -175,7 +175,7 @@ export type Database = {
           worker_id?: string | null
         }
         Update: {
-          camera_id?: string
+          camera_id?: string | null
           clip_url?: string | null
           confidence_score?: number | null
           created_at?: string
@@ -379,6 +379,7 @@ export type Database = {
           apd_manual_check: Json | null
           created_at: string
           id: string
+          jenis_pelanggaran: string | null
           komentar: string | null
           status: Database["public"]["Enums"]["validation_status"]
           supervisor_id: string
@@ -392,6 +393,7 @@ export type Database = {
           apd_manual_check?: Json | null
           created_at?: string
           id?: string
+          jenis_pelanggaran?: string | null
           komentar?: string | null
           status: Database["public"]["Enums"]["validation_status"]
           supervisor_id: string
@@ -405,6 +407,7 @@ export type Database = {
           apd_manual_check?: Json | null
           created_at?: string
           id?: string
+          jenis_pelanggaran?: string | null
           komentar?: string | null
           status?: Database["public"]["Enums"]["validation_status"]
           supervisor_id?: string

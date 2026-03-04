@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert, Image, Video } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format, subDays } from 'date-fns';
@@ -33,6 +34,14 @@ const ALASAN_TIDAK_VALID = [
   { value: 'LAINNYA', label: 'Alasan Lainnya' },
 ];
 
+const JENIS_PELANGGARAN_OPTIONS = [
+  { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
+  { value: 'MASUK_TANPA_IZIN', label: 'Masuk Tanpa Izin' },
+  { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Tanpa Izin' },
+  { value: 'ORANG_TIDAK_DIKENAL', label: 'Orang Tidak Dikenal' },
+  { value: 'LAINNYA', label: 'Lainnya' },
+];
+
 interface EventRow {
   id: string;
   detected_at: string;
@@ -42,7 +51,7 @@ interface EventRow {
   snapshot_url: string | null;
   clip_url: string | null;
   worker_id: string | null;
-  camera_id: string;
+  camera_id: string | null;
   workers: { nama: string; sid: string } | null;
   cameras: { name: string; point_type: string; zone_id: string; zones: { name: string } | null } | null;
   alerts: { id: string; alert_type: string; status: string }[];
@@ -64,6 +73,7 @@ export default function OperatorValidation() {
   const [alasanType, setAlasanType] = useState('APD_TIDAK_LENGKAP');
   const [alasanText, setAlasanText] = useState('');
   const [reviseSid, setReviseSid] = useState('__none__');
+  const [jenisPelanggaran, setJenisPelanggaran] = useState('APD_TIDAK_LENGKAP');
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['operator-events', dateFrom, dateTo],
@@ -82,7 +92,7 @@ export default function OperatorValidation() {
   const { data: validations = [] } = useQuery({
     queryKey: ['operator-validations'],
     queryFn: async () => {
-      const { data } = await supabase.from('supervisor_validations').select('alert_id, status, validation_level');
+      const { data } = await supabase.from('supervisor_validations').select('alert_id, status, validation_level, jenis_pelanggaran');
       return data || [];
     },
   });
@@ -96,9 +106,9 @@ export default function OperatorValidation() {
   });
 
   const validationMap = useMemo(() => {
-    const map: Record<string, string> = {};
+    const map: Record<string, { status: string; jenis_pelanggaran: string | null }> = {};
     validations.forEach((v: any) => {
-      if (v.validation_level === 'operator') map[v.alert_id] = v.status;
+      if (v.validation_level === 'operator') map[v.alert_id] = { status: v.status, jenis_pelanggaran: v.jenis_pelanggaran };
     });
     return map;
   }, [validations]);
@@ -116,7 +126,13 @@ export default function OperatorValidation() {
   const getEventStatus = (event: EventRow) => {
     const alert = event.alerts?.[0];
     if (!alert) return 'TIDAK_ADA_ALERT';
-    return validationMap[alert.id] || 'BARU';
+    return validationMap[alert.id]?.status || 'BARU';
+  };
+
+  const getEventJenisPelanggaran = (event: EventRow) => {
+    const alert = event.alerts?.[0];
+    if (!alert) return null;
+    return validationMap[alert.id]?.jenis_pelanggaran || null;
   };
 
   const filtered = useMemo(() => {
@@ -161,6 +177,7 @@ export default function OperatorValidation() {
         validation_level: 'operator',
         alasan_type: alasanType as any,
         alasan_text: alasanType === 'LAINNYA' ? alasanText : null,
+        jenis_pelanggaran: jenisPelanggaran,
       });
       if (error) throw error;
     },
@@ -174,14 +191,18 @@ export default function OperatorValidation() {
   });
 
   const exportExcel = () => {
-    const headers = ['Tanggal', 'Pekerja', 'SID', 'Kamera', 'Tipe', 'Zona', 'Status', 'Tipe Pelanggaran', 'Confidence'];
-    const rows = filtered.map(e => [
-      format(new Date(e.detected_at), 'dd/MM/yyyy HH:mm'),
-      e.workers?.nama || 'Tidak Dikenal', e.workers?.sid || '-',
-      e.cameras?.name || '-', e.event_type, e.cameras?.zones?.name || '-',
-      getEventStatus(e), e.alerts?.[0]?.alert_type || '-',
-      e.confidence_score ? `${(e.confidence_score * 100).toFixed(0)}%` : '-',
-    ]);
+    const headers = ['Tanggal', 'Pekerja', 'SID', 'Kamera', 'Tipe', 'Zona', 'Status', 'Jenis Pelanggaran', 'Tipe Alert', 'Confidence'];
+    const rows = filtered.map(e => {
+      const jp = getEventJenisPelanggaran(e);
+      const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === jp)?.label || jp || '-';
+      return [
+        format(new Date(e.detected_at), 'dd/MM/yyyy HH:mm'),
+        e.workers?.nama || 'Tidak Dikenal', e.workers?.sid || '-',
+        e.cameras?.name || '-', e.event_type, e.cameras?.zones?.name || '-',
+        getEventStatus(e), jpLabel, e.alerts?.[0]?.alert_type || '-',
+        e.confidence_score != null ? `${(e.confidence_score * 100).toFixed(0)}%` : 'N/A',
+      ];
+    });
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -198,13 +219,21 @@ export default function OperatorValidation() {
     }
   };
 
-  const ppeResults = selectedEvent?.ppe_results || {};
+  const renderConfidence = (score: number | null) => {
+    if (score != null) return `${(score * 100).toFixed(0)}%`;
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-muted-foreground cursor-help">N/A</span>
+          </TooltipTrigger>
+          <TooltipContent><p>Wajah tidak cocok</p></TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
 
-  const filteredWorkers = allWorkers.filter((w: any) => {
-    if (!reviseSid) return true;
-    // This is for the search in the select, we show all
-    return true;
-  });
+  const ppeResults = selectedEvent?.ppe_results || {};
 
   return (
     <AppLayout title="Validasi Operator">
@@ -267,7 +296,7 @@ export default function OperatorValidation() {
                   <TableHead>Tipe</TableHead>
                   <TableHead>Zona</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Pelanggaran</TableHead>
+                  <TableHead>Jenis Pelanggaran</TableHead>
                   <TableHead>Confidence</TableHead>
                 </TableRow>
               </TableHeader>
@@ -276,20 +305,24 @@ export default function OperatorValidation() {
                   <TableRow><TableCell colSpan={8} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Tidak ada event</TableCell></TableRow>
-                ) : filtered.map(e => (
-                  <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setValidationStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid('__none__'); }}>
-                    <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
-                    <TableCell className="font-medium text-sm">
-                      {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
-                    </TableCell>
-                    <TableCell className="text-sm">{e.cameras?.name || '-'}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px] capitalize">{e.cameras?.point_type === 'exit' ? 'Keluar' : 'Area'}</Badge></TableCell>
-                    <TableCell className="text-sm">{e.cameras?.zones?.name || '-'}</TableCell>
-                    <TableCell>{statusBadge(getEventStatus(e))}</TableCell>
-                    <TableCell><Badge variant="secondary" className="text-[10px]">{e.alerts?.[0]?.alert_type === 'APD_VIOLATION' ? 'APD' : e.alerts?.[0]?.alert_type === 'UNKNOWN_PERSON' ? 'Unknown' : '-'}</Badge></TableCell>
-                    <TableCell className="text-xs">{e.confidence_score ? `${(e.confidence_score * 100).toFixed(0)}%` : '-'}</TableCell>
-                  </TableRow>
-                ))}
+                ) : filtered.map(e => {
+                  const jp = getEventJenisPelanggaran(e);
+                  const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === jp)?.label || '-';
+                  return (
+                    <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedEvent(e); setValidationStatus('VALID'); setAlasanType('APD_TIDAK_LENGKAP'); setAlasanText(''); setReviseSid('__none__'); setJenisPelanggaran('APD_TIDAK_LENGKAP'); }}>
+                      <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
+                      <TableCell className="font-medium text-sm">
+                        {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
+                      </TableCell>
+                      <TableCell className="text-sm">{e.cameras?.name || '-'}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-[10px] capitalize">{e.cameras?.point_type === 'exit' ? 'Keluar' : 'Area'}</Badge></TableCell>
+                      <TableCell className="text-sm">{e.cameras?.zones?.name || '-'}</TableCell>
+                      <TableCell>{statusBadge(getEventStatus(e))}</TableCell>
+                      <TableCell className="text-xs">{jpLabel}</TableCell>
+                      <TableCell className="text-xs">{renderConfidence(e.confidence_score)}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -311,7 +344,7 @@ export default function OperatorValidation() {
                 <div><span className="text-muted-foreground">Kamera:</span> {selectedEvent.cameras?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Tipe:</span> {selectedEvent.cameras?.point_type === 'exit' ? 'Keluar' : 'Area'}</div>
                 <div><span className="text-muted-foreground">Zona:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
-                <div><span className="text-muted-foreground">Confidence:</span> {selectedEvent.confidence_score ? `${(selectedEvent.confidence_score * 100).toFixed(0)}%` : '-'}</div>
+                <div><span className="text-muted-foreground">Confidence:</span> {renderConfidence(selectedEvent.confidence_score)}</div>
                 <div><span className="text-muted-foreground">Status:</span> {statusBadge(getEventStatus(selectedEvent))}</div>
               </div>
 
@@ -359,6 +392,16 @@ export default function OperatorValidation() {
                         <SelectContent>
                           <SelectItem value="__none__">Tidak ada revisi</SelectItem>
                           {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Jenis Pelanggaran */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm">Jenis Pelanggaran</Label>
+                      <Select value={jenisPelanggaran} onValueChange={setJenisPelanggaran}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>

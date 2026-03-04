@@ -11,7 +11,7 @@ const NotFound = () => {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-4">
-      <img src={logo} alt="SQE Eyes" className="h-16 w-auto" />
+      <img src={logo} alt="COSMOS" className="h-16 w-auto" />
       <div className="text-center">
         <h1 className="mb-2 text-5xl font-bold text-foreground">404</h1>
         <p className="mb-6 text-lg text-muted-foreground">Halaman tidak ditemukan</p>
