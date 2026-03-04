@@ -17,13 +17,11 @@ import { toast } from 'sonner';
 interface DetectionResult {
   id: string;
   timestamp: Date;
-  worker: { nama: string; sid: string } | null;
-  event_type: string;
+  worker: { nama: string; sid: string; jabatan: string } | null;
   ppe_results: Record<string, { detected: boolean; confidence: number }>;
   alert_created: boolean;
   alert_type?: string;
-  violations: string[];
-  zone_rules_applied: boolean;
+  jenisPelanggaran: string;
 }
 
 const ppeLabel: Record<string, string> = {
@@ -111,12 +109,13 @@ export default function Simulate() {
         body: { image_base64: imageBase64, camera_id: selectedCameraId },
       });
       if (error) throw error;
+      const cam = cameras.find((c: any) => c.id === selectedCameraId);
       const result: DetectionResult = {
         id: crypto.randomUUID(), timestamp: new Date(),
-        worker: data.worker || null, event_type: data.event_type || 'UNKNOWN',
+        worker: data.worker || null,
         ppe_results: data.ppe_results || {},
         alert_created: !!data.alert_id, alert_type: data.alert_type,
-        violations: data.violations || [], zone_rules_applied: data.zone_rules_applied || false,
+        jenisPelanggaran: (cam as any)?.jenis_pelanggaran || 'APD_TIDAK_LENGKAP',
       };
       setResults(prev => [result, ...prev].slice(0, 5));
       toast.success('Deteksi selesai');
@@ -285,45 +284,48 @@ export default function Simulate() {
                   {results.map((r, i) => (
                     <Card key={r.id} className={i === 0 ? 'border-primary' : ''}>
                       <CardContent className="p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-muted-foreground">{r.timestamp.toLocaleTimeString('id-ID')}</span>
-                          <Badge variant={r.event_type === 'MASUK' ? 'default' : r.event_type === 'KELUAR' ? 'secondary' : 'outline'} className="text-[10px]">{r.event_type}</Badge>
-                        </div>
+                        {/* 1. Tanggal & Waktu */}
+                        <p className="text-[10px] text-muted-foreground">
+                          {r.timestamp.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}, {r.timestamp.toLocaleTimeString('id-ID')}
+                        </p>
+
+                        {/* 2. SID & Nama */}
                         <div className="flex items-center gap-2">
                           {r.worker ? (
                             <>
-                              <UserCheck className="h-4 w-4 text-green-600" />
-                              <div><p className="text-sm font-medium">{r.worker.nama}</p><p className="text-[10px] text-muted-foreground">SID: {r.worker.sid}</p></div>
+                              <UserCheck className="h-4 w-4 text-green-600 shrink-0" />
+                              <p className="text-sm font-medium">SID: {r.worker.sid} — {r.worker.nama}</p>
                             </>
                           ) : (
-                            <><UserX className="h-4 w-4 text-destructive" /><p className="text-sm text-muted-foreground">Tidak Dikenal</p></>
+                            <><UserX className="h-4 w-4 text-destructive shrink-0" /><p className="text-sm text-muted-foreground">Tidak Dikenal</p></>
                           )}
                         </div>
-                        {Object.keys(r.ppe_results).length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {Object.entries(r.ppe_results).map(([item, val]) => (
-                              <Badge key={item} variant={val.detected ? 'default' : 'destructive'} className="text-[9px] gap-0.5">
-                                {val.detected ? <ShieldCheck className="h-2.5 w-2.5" /> : <ShieldAlert className="h-2.5 w-2.5" />}
-                                {ppeLabel[item] || item}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                        {r.alert_created && (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1 text-destructive">
-                              <AlertTriangle className="h-3 w-3" />
-                              <span className="text-[10px] font-medium">
-                                {r.alert_type === 'APD_VIOLATION' ? 'Pelanggaran APD' : r.alert_type === 'UNKNOWN_PERSON' ? 'Orang Tidak Dikenal' : r.alert_type === 'UNAUTHORIZED_EXIT' ? 'Keluar Tanpa Izin' : 'Peringatan'}
-                              </span>
+
+                        {/* 3. Jabatan */}
+                        <p className="text-xs text-muted-foreground">Jabatan: {r.worker?.jabatan || '-'}</p>
+
+                        {/* 4. Jenis Pelanggaran */}
+                        <div className="flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3 text-destructive" />
+                          <Badge variant="destructive" className="text-[10px]">
+                            {r.jenisPelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}
+                          </Badge>
+                        </div>
+
+                        {/* 5. Detail berdasarkan jenis pelanggaran */}
+                        {r.jenisPelanggaran === 'KELUAR_TANPA_IZIN' ? (
+                          <p className="text-xs text-destructive ml-4">Tidak Ada Izin</p>
+                        ) : (
+                          Object.keys(r.ppe_results).length > 0 && (
+                            <div className="flex flex-wrap gap-1 ml-4">
+                              {Object.entries(r.ppe_results).map(([item, val]) => (
+                                <Badge key={item} variant={val.detected ? 'default' : 'destructive'} className="text-[9px] gap-0.5">
+                                  {val.detected ? <ShieldCheck className="h-2.5 w-2.5" /> : <ShieldAlert className="h-2.5 w-2.5" />}
+                                  {ppeLabel[item] || item}
+                                </Badge>
+                              ))}
                             </div>
-                            {r.violations.length > 0 && <p className="text-[9px] text-muted-foreground ml-4">Tidak terdeteksi: {r.violations.join(', ')}</p>}
-                          </div>
-                        )}
-                        {r.zone_rules_applied && !r.alert_created && (
-                          <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                            <ShieldCheck className="h-3 w-3" /><span className="text-[10px]">APD sesuai aturan zona</span>
-                          </div>
+                          )
                         )}
                       </CardContent>
                     </Card>

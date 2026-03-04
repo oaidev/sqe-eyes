@@ -394,7 +394,7 @@ Deno.serve(async (req) => {
         success: true,
         event_id: eventRecord.id,
         worker_id: workerId,
-        worker: workerInfo ? { nama: workerInfo.nama, sid: workerInfo.sid } : null,
+        worker: workerInfo ? { nama: workerInfo.nama, sid: workerInfo.sid, jabatan: workerInfo.jabatan } : null,
         event_type: detectedEventType,
         confidence_score: confidenceScore,
         ppe_results: ppeResults,
