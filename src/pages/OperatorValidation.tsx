@@ -45,7 +45,7 @@ interface EventRow {
   event_type: string;
   ppe_results: any;
   snapshot_url: string | null;
-  
+  bounding_box: any;
   worker_id: string | null;
   camera_id: string | null;
   workers: { nama: string; sid: string } | null;
