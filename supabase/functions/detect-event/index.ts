@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
       const ppeBody = JSON.stringify({
         Image: { Bytes: imageB64 },
         SummarizationAttributes: {
-          MinConfidence: 70,
+          MinConfidence: 50,
           RequiredEquipmentTypes: ["FACE_COVER", "HEAD_COVER", "HAND_COVER"],
         },
       });
@@ -338,12 +338,17 @@ Deno.serve(async (req) => {
           const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
 
           for (const bp of person.BodyParts || []) {
+            console.log(`  Person ${pIdx} body part: ${bp.Name}, confidence: ${bp.Confidence}, equipment: ${JSON.stringify(bp.EquipmentDetections?.map((e: any) => ({ type: e.Type, conf: e.Confidence, covers: e.CoversBodyPart })))}`);
             for (const eq of bp.EquipmentDetections || []) {
               const type = eq.Type;
               if (type && PPE_MAP[type]) {
+                // Mark as detected if equipment confidence >= 50%, regardless of CoversBodyPart.Value
+                const eqConfidence = eq.Confidence ?? 0;
+                const coversValue = eq.CoversBodyPart?.Value ?? false;
+                const detected = eqConfidence >= 50 || coversValue;
                 ppeResults[PPE_MAP[type]] = {
-                  detected: eq.CoversBodyPart?.Value ?? false,
-                  confidence: eq.Confidence ?? 0,
+                  detected,
+                  confidence: eqConfidence,
                 };
               }
             }
