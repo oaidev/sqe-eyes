@@ -557,9 +557,9 @@ Deno.serve(async (req) => {
           camera_id: camera_id || null,
           worker_id: person.workerId,
           event_type: detectedEventType,
-          confidence_score: person.confidenceScore,
           ppe_results: person.ppeResults,
           snapshot_url: snapshotUrl,
+          bounding_box: person.boundingBox,
         })
         .select()
         .single();

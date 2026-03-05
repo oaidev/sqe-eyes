@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
+import { PpeMatrixDisplay } from '@/components/simulate/PpeMatrixDisplay';
 
 interface BoundingBoxData {
   Left: number; Top: number; Width: number; Height: number;
@@ -210,6 +211,12 @@ export default function Simulate() {
             <p className="text-xs text-muted-foreground">
               Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}</Badge>
             </p>
+          )}
+          {selectedCamera && (
+            <PpeMatrixDisplay
+              zoneId={(selectedCamera as any).zone_id}
+              zoneName={(selectedCamera as any).zones?.name}
+            />
           )}
         </div>
 
