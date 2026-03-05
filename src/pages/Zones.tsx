@@ -100,7 +100,7 @@ export default function Zones() {
         jenis_pelanggaran: camForm.jenis_pelanggaran,
         off_time_start: camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? (camForm.off_time_start || null) : null,
         off_time_end: camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? (camForm.off_time_end || null) : null,
-        detection_models: [],
+        
       };
       if (editingCam) {
         const { error } = await supabase.from('cameras').update(camPayload).eq('id', editingCam.id);

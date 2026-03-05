@@ -58,7 +58,6 @@ export type Database = {
       cameras: {
         Row: {
           created_at: string
-          detection_models: string[] | null
           id: string
           is_active: boolean
           jenis_pelanggaran: string | null
@@ -72,7 +71,6 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          detection_models?: string[] | null
           id?: string
           is_active?: boolean
           jenis_pelanggaran?: string | null
@@ -86,7 +84,6 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          detection_models?: string[] | null
           id?: string
           is_active?: boolean
           jenis_pelanggaran?: string | null
@@ -108,55 +105,9 @@ export type Database = {
           },
         ]
       }
-      compliance_aggregates: {
-        Row: {
-          created_at: string
-          id: string
-          period_end: string
-          period_start: string
-          ppe_compliance: Json | null
-          total_events: number
-          total_violations: number
-          violation_breakdown: Json | null
-          zone_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          period_end: string
-          period_start: string
-          ppe_compliance?: Json | null
-          total_events?: number
-          total_violations?: number
-          violation_breakdown?: Json | null
-          zone_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          period_end?: string
-          period_start?: string
-          ppe_compliance?: Json | null
-          total_events?: number
-          total_violations?: number
-          violation_breakdown?: Json | null
-          zone_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "compliance_aggregates_zone_id_fkey"
-            columns: ["zone_id"]
-            isOneToOne: false
-            referencedRelation: "zones"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       events: {
         Row: {
           camera_id: string | null
-          clip_url: string | null
-          confidence_score: number | null
           created_at: string
           detected_at: string
           event_type: Database["public"]["Enums"]["event_type"]
@@ -167,8 +118,6 @@ export type Database = {
         }
         Insert: {
           camera_id?: string | null
-          clip_url?: string | null
-          confidence_score?: number | null
           created_at?: string
           detected_at?: string
           event_type: Database["public"]["Enums"]["event_type"]
@@ -179,8 +128,6 @@ export type Database = {
         }
         Update: {
           camera_id?: string | null
-          clip_url?: string | null
-          confidence_score?: number | null
           created_at?: string
           detected_at?: string
           event_type?: Database["public"]["Enums"]["event_type"]
@@ -274,39 +221,6 @@ export type Database = {
           full_name?: string | null
           id?: string
           updated_at?: string
-        }
-        Relationships: []
-      }
-      report_exports: {
-        Row: {
-          created_at: string
-          exported_by: string
-          file_url: string | null
-          format: string
-          id: string
-          period_end: string
-          period_start: string
-          report_type: string
-        }
-        Insert: {
-          created_at?: string
-          exported_by: string
-          file_url?: string | null
-          format?: string
-          id?: string
-          period_end: string
-          period_start: string
-          report_type: string
-        }
-        Update: {
-          created_at?: string
-          exported_by?: string
-          file_url?: string | null
-          format?: string
-          id?: string
-          period_end?: string
-          period_start?: string
-          report_type?: string
         }
         Relationships: []
       }
@@ -489,7 +403,6 @@ export type Database = {
           is_active: boolean
           jabatan: string
           nama: string
-          shift: Database["public"]["Enums"]["worker_shift"]
           sid: string
           updated_at: string
         }
@@ -502,7 +415,6 @@ export type Database = {
           is_active?: boolean
           jabatan: string
           nama: string
-          shift?: Database["public"]["Enums"]["worker_shift"]
           sid: string
           updated_at?: string
         }
@@ -515,62 +427,10 @@ export type Database = {
           is_active?: boolean
           jabatan?: string
           nama?: string
-          shift?: Database["public"]["Enums"]["worker_shift"]
           sid?: string
           updated_at?: string
         }
         Relationships: []
-      }
-      zone_access_rules: {
-        Row: {
-          created_at: string
-          id: string
-          is_active: boolean
-          jabatan: string | null
-          shift: Database["public"]["Enums"]["worker_shift"] | null
-          time_end: string | null
-          time_start: string | null
-          worker_id: string | null
-          zone_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          jabatan?: string | null
-          shift?: Database["public"]["Enums"]["worker_shift"] | null
-          time_end?: string | null
-          time_start?: string | null
-          worker_id?: string | null
-          zone_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          jabatan?: string | null
-          shift?: Database["public"]["Enums"]["worker_shift"] | null
-          time_end?: string | null
-          time_start?: string | null
-          worker_id?: string | null
-          zone_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "zone_access_rules_worker_id_fkey"
-            columns: ["worker_id"]
-            isOneToOne: false
-            referencedRelation: "workers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "zone_access_rules_zone_id_fkey"
-            columns: ["zone_id"]
-            isOneToOne: false
-            referencedRelation: "zones"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       zone_ppe_rules: {
         Row: {
@@ -624,9 +484,6 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
-          shift: string | null
-          shift_end: string | null
-          shift_start: string | null
           site_id: string
           updated_at: string
         }
@@ -636,9 +493,6 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
-          shift?: string | null
-          shift_end?: string | null
-          shift_start?: string | null
           site_id: string
           updated_at?: string
         }
@@ -648,9 +502,6 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
-          shift?: string | null
-          shift_end?: string | null
-          shift_start?: string | null
           site_id?: string
           updated_at?: string
         }
@@ -698,7 +549,6 @@ export type Database = {
         | "REFLECTIVE_VEST"
         | "SAFETY_GLASSES"
       validation_status: "VALID" | "TIDAK_VALID"
-      worker_shift: "day" | "night" | "rotating"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -843,7 +693,6 @@ export const Constants = {
         "SAFETY_GLASSES",
       ],
       validation_status: ["VALID", "TIDAK_VALID"],
-      worker_shift: ["day", "night", "rotating"],
     },
   },
 } as const

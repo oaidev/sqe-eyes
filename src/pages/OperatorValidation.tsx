@@ -45,7 +45,7 @@ interface EventRow {
   event_type: string;
   ppe_results: any;
   snapshot_url: string | null;
-  clip_url: string | null;
+  
   worker_id: string | null;
   camera_id: string | null;
   workers: { nama: string; sid: string } | null;
@@ -341,12 +341,6 @@ export default function OperatorValidation() {
                   <div>
                     <Label className="text-sm font-medium">Foto Evidence</Label>
                     <img src={selectedEvent.snapshot_url} alt="Snapshot" className="mt-1 rounded-lg border max-h-64 object-contain w-full" />
-                  </div>
-                )}
-                {selectedEvent.clip_url && (
-                  <div>
-                    <Label className="text-sm font-medium">Video Evidence</Label>
-                    <video src={selectedEvent.clip_url} controls className="mt-1 rounded-lg border max-h-64 w-full" />
                   </div>
                 )}
               </div>
