@@ -173,6 +173,46 @@ export default function Index() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">APD Tidak Lengkap — 7 Hari Terakhir</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={apdChartData}>
+                  <XAxis dataKey="label" fontSize={12} />
+                  <YAxis allowDecimals={false} fontSize={12} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="valid" name="Valid" fill="hsl(var(--chart-2))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="tidak_valid" name="Tidak Valid" fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="belum" name="Belum Divalidasi" fill="hsl(var(--muted-foreground))" stackId="a" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Keluar Tanpa Izin — 7 Hari Terakhir</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={exitChartData}>
+                  <XAxis dataKey="label" fontSize={12} />
+                  <YAxis allowDecimals={false} fontSize={12} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="valid" name="Valid" fill="hsl(var(--chart-2))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="tidak_valid" name="Tidak Valid" fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="belum" name="Belum Divalidasi" fill="hsl(var(--muted-foreground))" stackId="a" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </AppLayout>
   );
