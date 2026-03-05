@@ -1,88 +1,36 @@
 
 
-# Analisis End-to-End & Rencana User Management + RBAC
+## Plan: Fix Deteksi & Tambah Fitur
 
-## Status Fitur Saat Ini
+### Masalah yang Ditemukan
 
-| Fitur | Status | Catatan |
-|-------|--------|---------|
-| Auth (Login/Register) | ✅ Berfungsi | Login, register, logout bekerja |
-| Dashboard | ✅ Berfungsi | Statistik real-time |
-| Kelola Pekerja | ✅ Berfungsi | CRUD + CSV import + face enrollment |
-| Zona & Kamera | ✅ Berfungsi | CRUD zona dan kamera |
-| Aturan APD | ✅ Berfungsi | Matriks toggle per zona |
-| Aturan Akses | ✅ Berfungsi | CRUD aturan akses zona |
-| Live Kamera | ✅ Berfungsi | Grid kamera + simulasi deteksi |
-| Event Terkini | ✅ Berfungsi | Realtime + detail APD |
-| Inbox Alert | ✅ Berfungsi | Filter, teruskan, catatan |
-| Validasi Alert | ✅ Berfungsi | Form validasi supervisor |
-| Izin Keluar | ✅ Berfungsi | Buat + approve/reject |
-| Laporan Kepatuhan | ✅ Berfungsi | Chart bar + pie |
-| Rekap Pelanggaran | ✅ Berfungsi | Group by worker |
-| Ekspor Laporan | ⚠️ Parsial | Hanya insert record, tidak generate file |
-| **Kelola Pengguna** | ❌ Tidak ada | Tidak ada halaman user management |
-| **CRUD Role** | ❌ Tidak ada | Tidak ada UI assign/ubah/hapus role |
-| **Route Protection** | ❌ Tidak ada | Semua halaman bisa diakses via URL langsung |
-| **Permission per Menu** | ❌ Tidak ada | Sidebar filter saja, halaman tidak cek role |
+1. **Edge function masih pakai `confidence_score`** (line 560 di `detect-event/index.ts`) — kolom ini sudah di-drop di migrasi cleanup tadi. Inilah penyebab utama error: semua event insert gagal, sehingga tidak ada hasil yang dikembalikan (bounding box hilang, APD abu-abu semua karena data kosong).
 
-## Yang Perlu Dibangun
+2. **APD abu-abu untuk "Tidak Dikenal"** — Setelah fix #1, perlu pastikan worker tanpa jabatan (unknown) menggunakan rules general (`jabatan = null`). Logika saat ini sudah benar (line 527-529), tapi hasilnya tidak terlihat karena insert gagal.
 
-### 1. Halaman "Kelola Pengguna" (`/users`)
-Halaman admin-only untuk:
-- **Daftar semua user** — email, nama, role, status (dari `profiles` + `user_roles`)
-- **Invite user baru** — form email + role, panggil `supabase.auth.admin.inviteUserByEmail()` via edge function (karena admin API tidak bisa dipanggil dari client)
-- **Ubah role** — dropdown ganti role (admin/operator/supervisor/safety_manager)
-- **Hapus user** — soft-delete atau remove dari sistem via edge function
-- **Tampilkan user tanpa role** — highlight user yang belum di-assign role
+3. **Tidak ada matrix APD setelah pilih kamera** — User ingin lihat item APD apa saja yang dicek (general + per jabatan) sebelum menjalankan deteksi.
 
-### 2. Edge Function `manage-users`
-Diperlukan karena operasi admin (invite, delete user, list users) membutuhkan `service_role_key`:
-- `POST /invite` — invite user by email + assign role
-- `POST /update-role` — update role user
-- `POST /delete-user` — delete user dari auth + cleanup
-- `GET /list` — list semua user dengan profile & role
+4. **6 orang = 1 snapshot** — Saat ini semua person pakai `snapshot_url` yang sama (gambar asli tanpa bounding box). Setiap person sudah menghasilkan event terpisah di DB, jadi sudah muncul sebagai row terpisah di validasi. Tapi snapshot-nya belum ada bounding box.
 
-### 3. Role-Based Route Protection
-Saat ini sidebar menyembunyikan menu, tapi user bisa ketik URL langsung dan tetap masuk. Perlu:
-- Komponen `<ProtectedRoute roles={['admin']}>` yang wrap halaman
-- Redirect ke dashboard jika role tidak sesuai
-- Tambahkan di setiap route di `App.tsx`
+### Perubahan
 
-### 4. Permission Granular per Menu (View/Edit/Delete)
-Definisi permission matrix di kode:
+#### 1. `supabase/functions/detect-event/index.ts` — Fix critical bug
+- Hapus `confidence_score` dari event insert (line 560)
 
-```text
-Menu                  | admin | operator | supervisor | safety_manager
-──────────────────────|───────|──────────|────────────|───────────────
-Dashboard             | view  | view     | view       | view
-Kelola Pekerja        | full  | —        | —          | —
-Zona & Kamera         | full  | —        | —          | —
-Aturan APD            | full  | —        | —          | —
-Aturan Akses          | full  | —        | —          | —
-Kelola Pengguna       | full  | —        | —          | —
-Live Kamera           | full  | view     | —          | —
-Event Terkini         | full  | view     | —          | —
-Inbox Alert           | full  | edit     | —          | —
-Validasi Alert        | full  | —        | edit       | —
-Izin Keluar           | full  | —        | edit       | —
-Laporan Kepatuhan     | view  | —        | —          | view
-Rekap Pelanggaran     | view  | —        | —          | view
-Ekspor Laporan        | full  | —        | —          | edit
-```
+#### 2. `src/pages/Simulate.tsx` — Tambah matrix APD
+- Query `zone_ppe_rules` berdasarkan `zone_id` dari kamera yang dipilih
+- Tampilkan tabel matrix APD (general + per jabatan) di bawah dropdown kamera, sebelum input gambar
+- Menampilkan 5 item PPE dan apakah required untuk setiap jabatan
 
-### File yang Diubah/Dibuat
+#### 3. `src/pages/Simulate.tsx` — Fix PPE display untuk unknown
+- Jika worker tidak dikenal, gunakan rules `jabatan = null` (general) untuk menentukan item mana yang dicek vs abu-abu. Ini sudah dilakukan di edge function tapi frontend perlu match logikanya: jika item ada di `ppe_results` (returned dari API) maka tampilkan hijau/merah, jika tidak ada tapi ada di general rules maka tampilkan merah (violation), sisanya abu-abu.
 
-1. **`supabase/functions/manage-users/index.ts`** — Edge function baru untuk admin user operations
-2. **`src/pages/Users.tsx`** — Halaman baru kelola pengguna
-3. **`src/components/layout/ProtectedRoute.tsx`** — Komponen route guard
-4. **`src/App.tsx`** — Tambah route `/users` + wrap semua route dengan ProtectedRoute
-5. **`src/components/layout/AppSidebar.tsx`** — Tambah menu "Kelola Pengguna"
-6. **`src/lib/permissions.ts`** — Permission matrix & helper `canAccess(role, page, action)`
-7. **Database migration** — Update RLS policy pada `profiles` agar admin bisa lihat semua profile
+#### 4. Snapshot dengan bounding box — Pertimbangan
+Edge function saat ini upload 1 snapshot untuk semua orang. Untuk menambahkan bounding box pada snapshot memerlukan image processing di server (draw rectangles on image) yang cukup kompleks. Alternatif yang lebih praktis: di halaman validasi, tampilkan bounding box overlay (seperti di Simulate) menggunakan data `ppe_results` dan bounding box yang tersimpan. Ini memerlukan menyimpan `bounding_box` di tabel events.
 
-### Alur Invite User
-1. Admin buka `/users` → klik "Invite User"
-2. Isi email + pilih role → panggil edge function `manage-users/invite`
-3. Edge function: `supabase.auth.admin.inviteUserByEmail()` + insert ke `user_roles`
-4. User terima email → klik link → set password → login dengan role yang sudah di-assign
+### Files Changed
+- `supabase/functions/detect-event/index.ts` — hapus `confidence_score` dari insert, tambah `bounding_box` field ke event insert (sebagai jsonb di `ppe_results` atau kolom baru)
+- `src/pages/Simulate.tsx` — tambah query & tampilan matrix APD setelah pilih kamera
+- Database migration — tambah kolom `bounding_box jsonb` ke tabel `events` (agar validasi bisa render overlay)
+- `src/pages/OperatorValidation.tsx` — render bounding box overlay dari data event
 
