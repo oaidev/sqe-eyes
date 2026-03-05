@@ -25,7 +25,7 @@ const PPE_LABELS: Record<string, string> = {
 
 const JENIS_PELANGGARAN_OPTIONS = [
   { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
-  { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Tanpa Izin' },
+  { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Zona' },
 ];
 
 function getAlasanOptions(jenisPelanggaran: string, status: string) {
@@ -58,12 +58,13 @@ export default function OperatorValidation() {
   const { toast } = useToast();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [dateFrom, setDateFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [searchSid, setSearchSid] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterZone, setFilterZone] = useState('all');
   const [filterCamera, setFilterCamera] = useState('all');
+  const [filterJenisPelanggaran, setFilterJenisPelanggaran] = useState('all');
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
   const [validationStatus, setValidationStatus] = useState<'VALID' | 'TIDAK_VALID'>('VALID');
   const [alasanType, setAlasanType] = useState('APD_TIDAK_LENGKAP');
@@ -143,9 +144,10 @@ export default function OperatorValidation() {
       }
       if (filterZone !== 'all' && e.cameras?.zone_id !== filterZone) return false;
       if (filterCamera !== 'all' && e.camera_id !== filterCamera) return false;
+      if (filterJenisPelanggaran !== 'all' && e.cameras?.jenis_pelanggaran !== filterJenisPelanggaran) return false;
       return true;
     });
-  }, [events, searchSid, filterStatus, filterZone, filterCamera, validationMap]);
+  }, [events, searchSid, filterStatus, filterZone, filterCamera, filterJenisPelanggaran, validationMap]);
 
   const totalViolations = filtered.filter(e => e.alerts && e.alerts.length > 0).length;
 
@@ -259,6 +261,13 @@ export default function OperatorValidation() {
             <SelectContent>
               <SelectItem value="all">Semua Kamera</SelectItem>
               {cameras.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterJenisPelanggaran} onValueChange={setFilterJenisPelanggaran}>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Jenis Pelanggaran" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Jenis</SelectItem>
+              {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={exportExcel}><Download className="mr-1 h-4 w-4" />Export CSV</Button>

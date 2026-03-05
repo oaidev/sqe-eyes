@@ -28,6 +28,7 @@ export default function Workers() {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [filterDept, setFilterDept] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<Worker | null>(null);
   const [editing, setEditing] = useState<Worker | null>(null);
@@ -116,7 +117,8 @@ export default function Workers() {
   const filtered = workers.filter(w => {
     const matchSearch = !search || w.nama.toLowerCase().includes(search.toLowerCase()) || w.sid.toLowerCase().includes(search.toLowerCase());
     const matchDept = filterDept === 'all' || w.departemen === filterDept;
-    return matchSearch && matchDept;
+    const matchStatus = filterStatus === 'all' || (filterStatus === 'active' ? w.is_active : !w.is_active);
+    return matchSearch && matchDept && matchStatus;
   });
 
   return (
@@ -133,6 +135,14 @@ export default function Workers() {
               <SelectContent>
                 <SelectItem value="all">Semua Dept</SelectItem>
                 {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="active">Aktif</SelectItem>
+                <SelectItem value="inactive">Tidak Aktif</SelectItem>
               </SelectContent>
             </Select>
           </div>

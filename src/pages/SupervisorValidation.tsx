@@ -25,7 +25,7 @@ const PPE_LABELS: Record<string, string> = {
 
 const JENIS_PELANGGARAN_OPTIONS = [
   { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
-  { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Tanpa Izin' },
+  { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Zona' },
 ];
 
 function getAlasanOptions(jenisPelanggaran: string, status: string) {
@@ -69,12 +69,13 @@ export default function SupervisorValidation() {
   const { toast } = useToast();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [dateFrom, setDateFrom] = useState(format(subDays(new Date(), 30), 'yyyy-MM-dd'));
+  const [dateFrom, setDateFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [searchSid, setSearchSid] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterZone, setFilterZone] = useState('all');
   const [filterCamera, setFilterCamera] = useState('all');
+  const [filterJenisPelanggaran, setFilterJenisPelanggaran] = useState('all');
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
   const [finalStatus, setFinalStatus] = useState<'VALID' | 'TIDAK_VALID'>('VALID');
   const [alasanType, setAlasanType] = useState('APD_TIDAK_LENGKAP');
@@ -156,9 +157,10 @@ export default function SupervisorValidation() {
       if (filterStatus !== 'all' && currentStatus !== filterStatus) return false;
       if (filterZone !== 'all' && e.cameras?.zone_id !== filterZone) return false;
       if (filterCamera !== 'all' && e.camera_id !== filterCamera) return false;
+      if (filterJenisPelanggaran !== 'all' && e.cameras?.jenis_pelanggaran !== filterJenisPelanggaran) return false;
       return true;
     });
-  }, [events, validatedAlertIds, searchSid, filterStatus, filterZone, filterCamera, opValidationMap, supValidationMap]);
+  }, [events, validatedAlertIds, searchSid, filterStatus, filterZone, filterCamera, filterJenisPelanggaran, opValidationMap, supValidationMap]);
 
   const getStatus = (e: EventRow) => {
     const alert = e.alerts?.[0];
@@ -283,6 +285,13 @@ export default function SupervisorValidation() {
             <SelectContent>
               <SelectItem value="all">Semua Zona</SelectItem>
               {zones.map((z: any) => <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterJenisPelanggaran} onValueChange={setFilterJenisPelanggaran}>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Jenis Pelanggaran" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Jenis</SelectItem>
+              {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" onClick={exportExcel}><Download className="mr-1 h-4 w-4" />Export CSV</Button>

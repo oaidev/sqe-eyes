@@ -229,7 +229,7 @@ export default function Zones() {
                             <TableRow key={cam.id}>
                               <TableCell className="font-medium">{cam.name}</TableCell>
                               <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
-                              <TableCell><Badge variant="outline" className="capitalize">{(cam as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}</Badge></TableCell>
+                              <TableCell><Badge variant="outline" className="capitalize">{(cam as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'}</Badge></TableCell>
                               <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
                               <TableCell>
                                 <div className="flex gap-1">
@@ -278,7 +278,7 @@ export default function Zones() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="APD_TIDAK_LENGKAP">APD Tidak Lengkap</SelectItem>
-                  <SelectItem value="KELUAR_TANPA_IZIN">Keluar Tanpa Izin</SelectItem>
+                  <SelectItem value="KELUAR_TANPA_IZIN">Keluar Zona</SelectItem>
                 </SelectContent>
               </Select>
             </div>

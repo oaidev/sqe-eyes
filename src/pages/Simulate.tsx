@@ -202,14 +202,14 @@ export default function Simulate() {
             <SelectContent>
               {cameras.map((c: any) => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.name} — {(c as any).zones?.name || 'Tanpa Zona'} ({(c as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'})
+                  {c.name} — {(c as any).zones?.name || 'Tanpa Zona'} ({(c as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'})
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {selectedCamera && (
             <p className="text-xs text-muted-foreground">
-              Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}</Badge>
+              Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'}</Badge>
             </p>
           )}
           {selectedCamera && (
