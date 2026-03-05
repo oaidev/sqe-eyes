@@ -111,6 +111,7 @@ export default function Simulate() {
       return;
     }
     setDetecting(true);
+    setLastCapturedImage(`data:image/jpeg;base64,${imageBase64}`);
     try {
       const { data, error } = await supabase.functions.invoke('detect-event', {
         body: { image_base64: imageBase64, camera_id: selectedCameraId },
@@ -122,13 +123,13 @@ export default function Simulate() {
       // Handle multi-person array response
       const personResults = data.results || [];
       if (personResults.length === 0) {
-        // Fallback for backward compatibility (single result)
         const result: DetectionResult = {
           id: crypto.randomUUID(), timestamp: new Date(),
           worker: data.worker || null,
           ppe_results: data.ppe_results || {},
           alert_created: !!data.alert_id, alert_type: data.alert_type,
           jenisPelanggaran,
+          boundingBox: data.bounding_box || null,
         };
         setResults(prev => [result, ...prev].slice(0, 20));
       } else {
@@ -140,6 +141,7 @@ export default function Simulate() {
           alert_created: !!p.alert_id,
           alert_type: p.alert_type,
           jenisPelanggaran,
+          boundingBox: p.bounding_box || null,
         }));
         setResults(prev => [...newResults, ...prev].slice(0, 20));
       }
