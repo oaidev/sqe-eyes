@@ -1,53 +1,39 @@
+## Plan: Form Validation, Required Markers & Role UI Fixes
 
+### 1. Camera form — required fields + max chars (`Zones.tsx`)
 
-## Plan: Fix Bounding Box Overlay & Face Identification Issues
+- Add `<span className="text-red-500">*</span>` to Nama Kamera and RTSP URL labels
+- Add `maxLength={100}` to camera name input, `maxLength={500}` to RTSP URL input
+- Show character counter hint below each input (e.g., "0/100")
+- Disable Simpan button when `!camForm.name || !camForm.rtsp_url`
 
-### Issue Analysis
+### 2. Zone form — required marker + max chars (`Zones.tsx`)
 
-From the screenshot: both persons show as "Tidak Dikenal" with orange bounding boxes and "Orang Tidak Dikenal" violation row, despite both having Helm and Rompi Reflektif detected (APD lengkap). Three problems:
+- Add red `*` to Nama Zona label
+- Add `maxLength={100}` to zone name input, `maxLength={250}` to description input
+- Show character counter hints
+- Nama Zona already required via `disabled={!zoneForm.name}`
 
-1. **Bounding box color wrong**: Both boxes are orange/red. Since APD is lengkap, compliant persons should have green boxes. The overlay shows "Orang Tidak Dikenal" as violation row even though the real issue is just identity — if APD is complete, box should be green for the APD portion.
-2. **Violation row shows "Orang Tidak Dikenal" instead of actual violation type**: Row 2 should show the jenis pelanggaran context (e.g., nothing if APD lengkap, or the specific missing items).
-3. **Face identification failing for multi-person**: The cropping approach may be failing silently. Need to check edge function logs, but likely the `jpeg-js` decode/encode is producing images that AWS can't process, or the crop region is too large/small.
+### 3. All forms — required field indicators
 
-### Changes
+- Invite User dialog (`Users.tsx`): red `*` on Email and Role labels (already required via button disable)
+- Email: can only accept text in email format
+- Nama Lengkap: change from "opsional" to required with red `*`, add `maxLength={100}`, disable Buat Akun when empty
+- Show character counter for Nama Lengkap
 
-#### 1. `BoundingBoxOverlay.tsx` — Fix two-row label logic
+### 4. Role display uppercase (`Users.tsx`)
 
-**Current problem**: `hasViolation` is `true` when `status === 'unknown'`, which forces orange box + "Orang Tidak Dikenal" violation text. But the user wants:
-- Row 1 (Identity): Green if known, orange if unknown — this is correct
-- Row 2 (Violation): Only show if there's an *actual PPE/zone violation*, NOT just because identity is unknown
-- Box color: Should reflect PPE compliance, not identity. Green if APD lengkap (even if unknown person), red if APD violation or keluar zona.
+- In the badge display (line 142), capitalize first letter: `u.role.charAt(0).toUpperCase() + u.role.slice(1)`
+- Also in invite dialog role selector labels (already uppercase via ROLES const — confirmed OK)
 
-**Fix**:
-- Separate identity status from violation status
-- Box color = green if no PPE violations, red if PPE violations or keluar zona
-- Row 2 = only shown when there's a PPE violation or keluar zona, with red background
-- Remove "Orang Tidak Dikenal" as a violation row — identity is already shown in row 1
+### 5. Kelola Role — remove edit/delete toggles for specific pages (`Roles.tsx`)
 
-#### 2. `Simulate.tsx` — Fix status calculation for overlay
-
-**Current**: `status` is set to `'unknown'` when worker is null, which drives box color to orange.
-
-**Fix**: Status should be based on PPE compliance, not identity:
-- `'compliant'` if all PPE detected (regardless of identity)
-- `'violation'` if any PPE missing or keluar zona
-
-#### 3. `Simulate.tsx` — Fix badge in Hasil Deteksi (results panel)
-
-The badge should also reflect jenis pelanggaran properly — currently for unknown persons it always shows "Tidak Dikenal" badge regardless of APD status.
-
-#### 4. `detect-event/index.ts` — Fix face cropping for multi-person identification
-
-The `jpeg-js` library may be producing images that AWS rejects. Potential issues:
-- `Buffer.alloc` may not work in Deno (it's a Node.js API)
-- The crop may produce too-small images
-- Error is silently caught and skipped
-
-**Fix**: Add better error logging, use `Uint8Array` instead of `Buffer`, and ensure the cropped JPEG is valid. Also increase padding to ensure enough face context for recognition.
+- For pages: `dashboard`, `simulate` — only show "Lihat" toggle, hide "Edit" and "Hapus" columns
+- For pages: `operator-validation`, `supervisor-validation` — only show "Lihat" and "Edit" toggle, hide "Hapus" column
+- Implementation: define a set of view-only pages, conditionally render edit/delete switches as disabled or hidden for those pages
 
 ### Files Changed
-1. `src/components/simulate/BoundingBoxOverlay.tsx` — Decouple identity from violation; box color based on PPE compliance
-2. `src/pages/Simulate.tsx` — Fix status logic and badge display
-3. `supabase/functions/detect-event/index.ts` — Fix Buffer→Uint8Array in crop function, improve error handling
 
+1. `src/pages/Zones.tsx` — required markers, maxLength, character counters on zone & camera forms
+2. `src/pages/Users.tsx` — required markers, nama lengkap required + max 100 chars, role badge uppercase
+3. `src/pages/Roles.tsx` — hide edit/delete toggles for dashboard, simulasi deteksi, validasi operator, validasi supervisor
