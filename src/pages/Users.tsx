@@ -55,15 +55,15 @@ export default function Users() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('all');
 
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['manage-users'],
+    queryFn: async () => { const res = await invokeManageUsers('list', 'GET'); return res.users as UserRow[]; },
+  });
+
   const filteredUsers = users.filter(u => {
     const matchSearch = !searchQuery || u.email.toLowerCase().includes(searchQuery.toLowerCase()) || (u.full_name || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchRole = filterRole === 'all' || u.role === filterRole;
     return matchSearch && matchRole;
-  });
-
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ['manage-users'],
-    queryFn: async () => { const res = await invokeManageUsers('list', 'GET'); return res.users as UserRow[]; },
   });
 
   const inviteMutation = useMutation({
