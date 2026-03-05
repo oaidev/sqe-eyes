@@ -99,8 +99,8 @@ const PPE_LABEL: Record<string, string> = {
 };
 
 // Labels from DetectLabels API that map to our PPE items
-const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot", "steel-toe"];
-const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket", "jacket", "workwear"];
+const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot", "steel-toe", "steel toe", "protective footwear", "cowboy boot", "hiking boot", "sneaker", "rubber boot", "clothing", "apparel"];
+const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket", "jacket", "workwear", "uniform", "overall", "coverall", "outerwear", "fluorescent"];
 
 // Bounding box overlap helper — checks if two bounding boxes overlap significantly
 function bboxOverlap(
@@ -338,7 +338,14 @@ Deno.serve(async (req) => {
           const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
 
           for (const bp of person.BodyParts || []) {
-            console.log(`  Person ${pIdx} body part: ${bp.Name}, confidence: ${bp.Confidence}, equipment: ${JSON.stringify(bp.EquipmentDetections?.map((e: any) => ({ type: e.Type, conf: e.Confidence, covers: e.CoversBodyPart })))}`);
+            const eqSummary = bp.EquipmentDetections?.map((e: any) => ({ type: e.Type, conf: e.Confidence, covers: e.CoversBodyPart }));
+            console.log(`  Person ${pIdx} body part: ${bp.Name}, confidence: ${bp.Confidence?.toFixed(1)}%, equipment: ${JSON.stringify(eqSummary)}`);
+            
+            // Log when body part is clearly visible but no equipment found
+            if (bp.Confidence > 90 && (!bp.EquipmentDetections || bp.EquipmentDetections.length === 0)) {
+              console.log(`  ⚠️ Person ${pIdx}: ${bp.Name} visible (${bp.Confidence?.toFixed(1)}%) but NO equipment detected — item likely NOT WORN`);
+            }
+            
             for (const eq of bp.EquipmentDetections || []) {
               const type = eq.Type;
               if (type && PPE_MAP[type]) {
@@ -377,7 +384,7 @@ Deno.serve(async (req) => {
       const labelsBody = JSON.stringify({
         Image: { Bytes: imageB64 },
         MaxLabels: 50,
-        MinConfidence: 40,
+        MinConfidence: 30,
       });
       const labelsHeaders = await signRequest("POST", endpoint, labelsBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectLabels");
       const labelsRes = await fetch(endpoint, { method: "POST", headers: labelsHeaders, body: labelsBody });
