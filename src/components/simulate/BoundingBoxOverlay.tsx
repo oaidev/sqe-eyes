@@ -63,12 +63,13 @@ export function BoundingBoxOverlay({ imageSrc, persons }: BoundingBoxOverlayProp
       </svg>
       {/* HTML labels for better text rendering */}
       {boxes.map((person, i) => {
+        const bb = person.boundingBox!;
         const colorClass = person.hasViolation ? 'bg-red-500' : 'bg-green-500';
         const label = `#${person.personIndex} ${person.workerName || 'Tidak Dikenal'}`;
         return (
           <div
             key={i}
-            className={`absolute ${color} text-white text-[9px] leading-tight px-1 py-0.5 rounded-sm font-medium truncate`}
+            className={`absolute ${colorClass} text-white text-[9px] leading-tight px-1 py-0.5 rounded-sm font-medium truncate`}
             style={{
               left: `${bb.Left * 100}%`,
               top: `${Math.max(0, bb.Top - 0.04) * 100}%`,
