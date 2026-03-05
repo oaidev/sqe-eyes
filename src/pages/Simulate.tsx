@@ -43,7 +43,7 @@ export default function Simulate() {
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(5);
   const autoCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-
+  const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
   const webcamStreamRef = useRef<MediaStream | null>(null);
