@@ -99,8 +99,24 @@ const PPE_LABEL: Record<string, string> = {
 };
 
 // Labels from DetectLabels API that map to our PPE items
-const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot"];
-const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket"];
+const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot", "steel-toe"];
+const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket", "jacket", "workwear"];
+
+// Bounding box overlap helper — checks if two bounding boxes overlap significantly
+function bboxOverlap(
+  a: { Left: number; Top: number; Width: number; Height: number },
+  b: { Left: number; Top: number; Width: number; Height: number }
+): number {
+  const x1 = Math.max(a.Left, b.Left);
+  const y1 = Math.max(a.Top, b.Top);
+  const x2 = Math.min(a.Left + a.Width, b.Left + b.Width);
+  const y2 = Math.min(a.Top + a.Height, b.Top + b.Height);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  const intersection = (x2 - x1) * (y2 - y1);
+  const areaA = a.Width * a.Height;
+  const areaB = b.Width * b.Height;
+  return intersection / Math.min(areaA, areaB);
+}
 
 // ─── Main handler ───────────────────────────────────────────────────────────
 
@@ -117,14 +133,11 @@ Deno.serve(async (req) => {
 
     const { camera_id, image_url, image_base64, event_type } = await req.json();
 
-    // camera_id is now optional — simulation mode when absent
     if (!image_url && !image_base64) {
       return new Response(JSON.stringify({ error: "image_url or image_base64 required" }), {
         status: 400, headers: corsHeaders,
       });
     }
-
-    const isSimulation = !camera_id;
 
     const region = Deno.env.get("AWS_REGION") || "ap-southeast-1";
     const accessKey = Deno.env.get("AWS_ACCESS_KEY_ID")!;
@@ -133,11 +146,11 @@ Deno.serve(async (req) => {
     const endpoint = `https://rekognition.${region}.amazonaws.com`;
 
     // Get camera info if camera_id provided
-    let cameraInfo: { zone_id: string; point_type: string } | null = null;
+    let cameraInfo: { zone_id: string; point_type: string; jenis_pelanggaran: string } | null = null;
     if (camera_id) {
       const { data: camData, error: camErr } = await supabase
         .from("cameras")
-        .select("zone_id, point_type")
+        .select("zone_id, point_type, jenis_pelanggaran")
         .eq("id", camera_id)
         .single();
 
@@ -185,11 +198,46 @@ Deno.serve(async (req) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 1. SearchFacesByImage to identify worker
+    // 1. DetectFaces — get all face bounding boxes
     // ──────────────────────────────────────────────────────────────────────
-    let workerId: string | null = null;
-    let confidenceScore: number | null = null;
+    interface FaceInfo {
+      boundingBox: { Left: number; Top: number; Width: number; Height: number };
+      workerId: string | null;
+      workerInfo: { nama: string; sid: string; jabatan: string } | null;
+      confidenceScore: number | null;
+    }
 
+    const faces: FaceInfo[] = [];
+
+    try {
+      const detectFacesBody = JSON.stringify({
+        Image: { Bytes: imageB64 },
+        Attributes: ["DEFAULT"],
+      });
+      const detectFacesHeaders = await signRequest("POST", endpoint, detectFacesBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectFaces");
+      const detectFacesRes = await fetch(endpoint, { method: "POST", headers: detectFacesHeaders, body: detectFacesBody });
+      const detectFacesData = await detectFacesRes.json();
+
+      console.log(`DetectFaces found ${detectFacesData.FaceDetails?.length || 0} faces`);
+
+      if (detectFacesData.FaceDetails?.length > 0) {
+        for (const face of detectFacesData.FaceDetails) {
+          faces.push({
+            boundingBox: face.BoundingBox,
+            workerId: null,
+            workerInfo: null,
+            confidenceScore: null,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("DetectFaces failed:", err);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 2. SearchFacesByImage — identify the largest face (AWS limitation)
+    //    Then match to detected faces via bounding box overlap
+    // ──────────────────────────────────────────────────────────────────────
     try {
       const searchBody = JSON.stringify({
         CollectionId: collectionId,
@@ -203,9 +251,11 @@ Deno.serve(async (req) => {
 
       if (searchData.FaceMatches?.length > 0) {
         const match = searchData.FaceMatches[0];
-        confidenceScore = match.Similarity / 100;
+        const confidence = match.Similarity / 100;
         const faceId = match.Face.FaceId;
+        const searchedBBox = searchData.SearchedFaceBoundingBox;
 
+        // Look up worker from face_id
         const { data: embedding } = await supabase
           .from("worker_face_embeddings")
           .select("worker_id")
@@ -213,27 +263,59 @@ Deno.serve(async (req) => {
           .limit(1)
           .single();
 
-        if (embedding) workerId = embedding.worker_id;
+        if (embedding) {
+          const { data: w } = await supabase
+            .from("workers")
+            .select("nama, sid, jabatan")
+            .eq("id", embedding.worker_id)
+            .single();
+
+          // Match to closest detected face by bounding box overlap
+          if (searchedBBox && faces.length > 0) {
+            let bestIdx = 0;
+            let bestOverlap = 0;
+            for (let i = 0; i < faces.length; i++) {
+              const overlap = bboxOverlap(searchedBBox, faces[i].boundingBox);
+              if (overlap > bestOverlap) {
+                bestOverlap = overlap;
+                bestIdx = i;
+              }
+            }
+            faces[bestIdx].workerId = embedding.worker_id;
+            faces[bestIdx].workerInfo = w || null;
+            faces[bestIdx].confidenceScore = confidence;
+          } else if (faces.length > 0) {
+            // Fallback: assign to first face
+            faces[0].workerId = embedding.worker_id;
+            faces[0].workerInfo = w || null;
+            faces[0].confidenceScore = confidence;
+          }
+        }
       }
     } catch (err) {
       console.error("Face search failed:", err);
     }
 
-    // Fetch worker details if identified
-    let workerInfo: { nama: string; sid: string; jabatan: string } | null = null;
-    if (workerId) {
-      const { data: w } = await supabase
-        .from("workers")
-        .select("nama, sid, jabatan")
-        .eq("id", workerId)
-        .single();
-      if (w) workerInfo = w;
+    // If no faces detected at all, create a single "unknown" entry
+    if (faces.length === 0) {
+      faces.push({
+        boundingBox: { Left: 0, Top: 0, Width: 1, Height: 1 },
+        workerId: null,
+        workerInfo: null,
+        confidenceScore: null,
+      });
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 2. DetectProtectiveEquipment for PPE check
+    // 3. DetectProtectiveEquipment — get PPE per person
     // ──────────────────────────────────────────────────────────────────────
-    const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
+    interface PersonPPE {
+      personIdx: number;
+      boundingBox: { Left: number; Top: number; Width: number; Height: number } | null;
+      ppeResults: Record<string, { detected: boolean; confidence: number }>;
+    }
+
+    const personsPPE: PersonPPE[] = [];
 
     try {
       const ppeBody = JSON.stringify({
@@ -247,20 +329,31 @@ Deno.serve(async (req) => {
       const ppeRes = await fetch(endpoint, { method: "POST", headers: ppeHeaders, body: ppeBody });
       const ppeData = await ppeRes.json();
 
+      console.log(`PPE detection found ${ppeData.Persons?.length || 0} persons`);
       console.log("PPE raw response:", JSON.stringify(ppeData).slice(0, 500));
 
       if (ppeData.Persons?.length > 0) {
-        const person = ppeData.Persons[0];
-        for (const bp of person.BodyParts || []) {
-          for (const eq of bp.EquipmentDetections || []) {
-            const type = eq.Type;
-            if (type && PPE_MAP[type]) {
-              ppeResults[PPE_MAP[type]] = {
-                detected: eq.CoversBodyPart?.Value ?? false,
-                confidence: eq.Confidence ?? 0,
-              };
+        for (let pIdx = 0; pIdx < ppeData.Persons.length; pIdx++) {
+          const person = ppeData.Persons[pIdx];
+          const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
+
+          for (const bp of person.BodyParts || []) {
+            for (const eq of bp.EquipmentDetections || []) {
+              const type = eq.Type;
+              if (type && PPE_MAP[type]) {
+                ppeResults[PPE_MAP[type]] = {
+                  detected: eq.CoversBodyPart?.Value ?? false,
+                  confidence: eq.Confidence ?? 0,
+                };
+              }
             }
           }
+
+          personsPPE.push({
+            personIdx: pIdx,
+            boundingBox: person.BoundingBox || null,
+            ppeResults,
+          });
         }
       }
     } catch (err) {
@@ -268,13 +361,18 @@ Deno.serve(async (req) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 2b. DetectLabels for SAFETY_SHOES and REFLECTIVE_VEST
+    // 3b. DetectLabels for SAFETY_SHOES and REFLECTIVE_VEST (global)
     // ──────────────────────────────────────────────────────────────────────
+    let globalShoeDetected = false;
+    let globalShoeConfidence = 0;
+    let globalVestDetected = false;
+    let globalVestConfidence = 0;
+
     try {
       const labelsBody = JSON.stringify({
         Image: { Bytes: imageB64 },
         MaxLabels: 50,
-        MinConfidence: 60,
+        MinConfidence: 40,
       });
       const labelsHeaders = await signRequest("POST", endpoint, labelsBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectLabels");
       const labelsRes = await fetch(endpoint, { method: "POST", headers: labelsHeaders, body: labelsBody });
@@ -287,161 +385,257 @@ Deno.serve(async (req) => {
         confidence: l.Confidence || 0,
       }));
 
-      // Check for safety shoes
       const shoeLabel = detectedLabels.find((l: any) => SHOE_LABELS.some(s => l.name.includes(s)));
       if (shoeLabel) {
-        ppeResults["SAFETY_SHOES"] = { detected: true, confidence: shoeLabel.confidence };
+        globalShoeDetected = true;
+        globalShoeConfidence = shoeLabel.confidence;
       }
 
-      // Check for reflective vest
       const vestLabel = detectedLabels.find((l: any) => VEST_LABELS.some(v => l.name.includes(v)));
       if (vestLabel) {
-        ppeResults["REFLECTIVE_VEST"] = { detected: true, confidence: vestLabel.confidence };
+        globalVestDetected = true;
+        globalVestConfidence = vestLabel.confidence;
       }
     } catch (err) {
       console.error("DetectLabels failed:", err);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 3. Query zone PPE rules and validate (skip in simulation mode)
+    // 4. Merge faces + PPE persons → build per-person results
     // ──────────────────────────────────────────────────────────────────────
-    const violations: string[] = [];
+
+    // Match PPE persons to detected faces by bounding box overlap
+    // Each face gets the PPE results of its best-matching PPE person
+    interface PersonResult {
+      workerId: string | null;
+      workerInfo: { nama: string; sid: string; jabatan: string } | null;
+      confidenceScore: number | null;
+      ppeResults: Record<string, { detected: boolean; confidence: number }>;
+      personIndex: number;
+    }
+
+    const results: PersonResult[] = [];
+
+    if (personsPPE.length > 0) {
+      // Use PPE persons as the primary list (they represent detected people)
+      const usedFaces = new Set<number>();
+
+      for (const ppePerson of personsPPE) {
+        let bestFaceIdx = -1;
+        let bestOverlap = 0;
+
+        // Match PPE person to a face
+        if (ppePerson.boundingBox) {
+          for (let fi = 0; fi < faces.length; fi++) {
+            if (usedFaces.has(fi)) continue;
+            const overlap = bboxOverlap(ppePerson.boundingBox, faces[fi].boundingBox);
+            if (overlap > bestOverlap) {
+              bestOverlap = overlap;
+              bestFaceIdx = fi;
+            }
+          }
+        }
+
+        const matchedFace = bestFaceIdx >= 0 ? faces[bestFaceIdx] : null;
+        if (bestFaceIdx >= 0) usedFaces.add(bestFaceIdx);
+
+        // Add global shoe/vest detection to each person's PPE
+        const mergedPPE = { ...ppePerson.ppeResults };
+        if (globalShoeDetected && !mergedPPE["SAFETY_SHOES"]) {
+          mergedPPE["SAFETY_SHOES"] = { detected: true, confidence: globalShoeConfidence };
+        }
+        if (globalVestDetected && !mergedPPE["REFLECTIVE_VEST"]) {
+          mergedPPE["REFLECTIVE_VEST"] = { detected: true, confidence: globalVestConfidence };
+        }
+
+        results.push({
+          workerId: matchedFace?.workerId || null,
+          workerInfo: matchedFace?.workerInfo || null,
+          confidenceScore: matchedFace?.confidenceScore || null,
+          ppeResults: mergedPPE,
+          personIndex: ppePerson.personIdx,
+        });
+      }
+    } else {
+      // No PPE persons detected — use faces only
+      for (const face of faces) {
+        const mergedPPE: Record<string, { detected: boolean; confidence: number }> = {};
+        if (globalShoeDetected) mergedPPE["SAFETY_SHOES"] = { detected: true, confidence: globalShoeConfidence };
+        if (globalVestDetected) mergedPPE["REFLECTIVE_VEST"] = { detected: true, confidence: globalVestConfidence };
+
+        results.push({
+          workerId: face.workerId,
+          workerInfo: face.workerInfo,
+          confidenceScore: face.confidenceScore,
+          ppeResults: mergedPPE,
+          personIndex: 0,
+        });
+      }
+    }
+
+    console.log(`Total persons to process: ${results.length}`);
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 5. Get zone PPE rules (once, shared for all persons)
+    // ──────────────────────────────────────────────────────────────────────
+    let zoneRules: { ppe_item: string; is_required: boolean; jabatan: string | null }[] = [];
     let zoneRulesApplied = false;
 
     if (cameraInfo) {
       try {
-        const { data: zoneRules, error: rulesErr } = await supabase
+        const { data, error } = await supabase
           .from("zone_ppe_rules")
           .select("ppe_item, is_required, jabatan")
           .eq("zone_id", cameraInfo.zone_id)
           .eq("is_required", true);
 
-        if (!rulesErr && zoneRules && zoneRules.length > 0) {
+        if (!error && data && data.length > 0) {
+          zoneRules = data;
           zoneRulesApplied = true;
-
-          const applicableRules = zoneRules.filter((rule) => {
-            if (!rule.jabatan) return true;
-            if (workerInfo && rule.jabatan === workerInfo.jabatan) return true;
-            if (!workerInfo) return true;
-            return false;
-          });
-
-          const requiredItems = [...new Set(applicableRules.map((r) => r.ppe_item))];
-
-          for (const item of requiredItems) {
-            const result = ppeResults[item];
-            if (!result) {
-              ppeResults[item] = { detected: false, confidence: 0 };
-              violations.push(PPE_LABEL[item] || item);
-            } else if (!result.detected) {
-              violations.push(PPE_LABEL[item] || item);
-            }
-          }
         }
       } catch (err) {
         console.error("Zone PPE rules query failed:", err);
       }
     }
 
-    // Determine event type
-    const detectedEventType = event_type || (workerId ? "MASUK" : "UNKNOWN");
-
     // ──────────────────────────────────────────────────────────────────────
-    // 4. Create event record
+    // 6. For each person: apply zone rules, create event + alert
     // ──────────────────────────────────────────────────────────────────────
-    const { data: eventRecord, error: eventError } = await supabase
-      .from("events")
-      .insert({
-        camera_id: camera_id || null,
-        worker_id: workerId,
-        event_type: detectedEventType,
-        confidence_score: confidenceScore,
-        ppe_results: ppeResults,
-        snapshot_url: snapshotUrl,
-      })
-      .select()
-      .single();
+    const allResults: any[] = [];
 
-    if (eventError) throw eventError;
+    for (const person of results) {
+      const violations: string[] = [];
 
-    // ──────────────────────────────────────────────────────────────────────
-    // 5. Create alerts based on violations
-    // ──────────────────────────────────────────────────────────────────────
-    let alertId: string | null = null;
-    let alertType: string | null = null;
-    let alertCreated = false;
+      // Apply zone rules
+      if (zoneRulesApplied) {
+        const applicableRules = zoneRules.filter((rule) => {
+          if (!rule.jabatan) return true;
+          if (person.workerInfo && rule.jabatan === person.workerInfo.jabatan) return true;
+          if (!person.workerInfo) return true;
+          return false;
+        });
 
-    const isUnknown = !workerId;
+        const requiredItems = [...new Set(applicableRules.map((r) => {
+          // Normalize: if zone rule says FACE_COVER, check as SAFETY_GLASSES
+          const item = r.ppe_item;
+          return PPE_MAP[item] || item;
+        }))];
 
-    if (isUnknown) {
-      alertType = "UNKNOWN_PERSON";
-      const { data: alert } = await supabase
-        .from("alerts")
+        for (const item of requiredItems) {
+          const result = person.ppeResults[item];
+          if (!result) {
+            person.ppeResults[item] = { detected: false, confidence: 0 };
+            violations.push(PPE_LABEL[item] || item);
+          } else if (!result.detected) {
+            violations.push(PPE_LABEL[item] || item);
+          }
+        }
+      }
+
+      // Determine event type
+      const detectedEventType = event_type || (person.workerId ? "MASUK" : "UNKNOWN");
+
+      // Create event record
+      const { data: eventRecord, error: eventError } = await supabase
+        .from("events")
         .insert({
-          event_id: eventRecord.id,
-          alert_type: "UNKNOWN_PERSON",
-          notes: "Orang tidak dikenal terdeteksi di area kerja.",
+          camera_id: camera_id || null,
+          worker_id: person.workerId,
+          event_type: detectedEventType,
+          confidence_score: person.confidenceScore,
+          ppe_results: person.ppeResults,
+          snapshot_url: snapshotUrl,
         })
-        .select("id")
+        .select()
         .single();
-      if (alert) alertId = alert.id;
-      alertCreated = true;
-    } else if (violations.length > 0) {
-      alertType = "APD_VIOLATION";
-      const violationNotes = `Pelanggaran APD: ${violations.join(", ")} tidak terdeteksi/tidak sesuai.`;
-      const { data: alert } = await supabase
-        .from("alerts")
-        .insert({
-          event_id: eventRecord.id,
-          alert_type: "APD_VIOLATION",
-          notes: violationNotes,
-        })
-        .select("id")
-        .single();
-      if (alert) alertId = alert.id;
-      alertCreated = true;
-    }
 
-    // Check unauthorized exit (only when camera info available)
-    if (workerId && cameraInfo && detectedEventType === "KELUAR" && cameraInfo.point_type === "exit") {
-      const { data: permits } = await supabase
-        .from("exit_permits")
-        .select("id")
-        .eq("worker_id", workerId)
-        .eq("status", "APPROVED")
-        .gte("valid_until", new Date().toISOString())
-        .lte("valid_from", new Date().toISOString())
-        .limit(1);
+      if (eventError) {
+        console.error("Event insert error:", eventError);
+        continue;
+      }
 
-      if (!permits || permits.length === 0) {
-        alertType = "UNAUTHORIZED_EXIT";
+      // Create alerts
+      let alertId: string | null = null;
+      let alertType: string | null = null;
+      let alertCreated = false;
+      const isUnknown = !person.workerId;
+
+      if (isUnknown) {
+        alertType = "UNKNOWN_PERSON";
         const { data: alert } = await supabase
           .from("alerts")
           .insert({
             event_id: eventRecord.id,
-            alert_type: "UNAUTHORIZED_EXIT",
-            notes: `${workerInfo?.nama || "Pekerja"} mencoba keluar tanpa izin yang valid.`,
+            alert_type: "UNKNOWN_PERSON",
+            notes: `Orang tidak dikenal terdeteksi di area kerja (Person #${person.personIndex + 1}).`,
+          })
+          .select("id")
+          .single();
+        if (alert) alertId = alert.id;
+        alertCreated = true;
+      } else if (violations.length > 0) {
+        alertType = "APD_VIOLATION";
+        const violationNotes = `Pelanggaran APD: ${violations.join(", ")} tidak terdeteksi/tidak sesuai.`;
+        const { data: alert } = await supabase
+          .from("alerts")
+          .insert({
+            event_id: eventRecord.id,
+            alert_type: "APD_VIOLATION",
+            notes: violationNotes,
           })
           .select("id")
           .single();
         if (alert) alertId = alert.id;
         alertCreated = true;
       }
+
+      // Check unauthorized exit
+      if (person.workerId && cameraInfo && detectedEventType === "KELUAR" && cameraInfo.point_type === "exit") {
+        const { data: permits } = await supabase
+          .from("exit_permits")
+          .select("id")
+          .eq("worker_id", person.workerId)
+          .eq("status", "APPROVED")
+          .gte("valid_until", new Date().toISOString())
+          .lte("valid_from", new Date().toISOString())
+          .limit(1);
+
+        if (!permits || permits.length === 0) {
+          alertType = "UNAUTHORIZED_EXIT";
+          const { data: alert } = await supabase
+            .from("alerts")
+            .insert({
+              event_id: eventRecord.id,
+              alert_type: "UNAUTHORIZED_EXIT",
+              notes: `${person.workerInfo?.nama || "Pekerja"} mencoba keluar tanpa izin yang valid.`,
+            })
+            .select("id")
+            .single();
+          if (alert) alertId = alert.id;
+          alertCreated = true;
+        }
+      }
+
+      allResults.push({
+        event_id: eventRecord.id,
+        worker_id: person.workerId,
+        worker: person.workerInfo,
+        event_type: detectedEventType,
+        confidence_score: person.confidenceScore,
+        ppe_results: person.ppeResults,
+        alert_created: alertCreated,
+        alert_id: alertId,
+        alert_type: alertType,
+        violations,
+        person_index: person.personIndex,
+      });
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        event_id: eventRecord.id,
-        worker_id: workerId,
-        worker: workerInfo ? { nama: workerInfo.nama, sid: workerInfo.sid, jabatan: workerInfo.jabatan } : null,
-        event_type: detectedEventType,
-        confidence_score: confidenceScore,
-        ppe_results: ppeResults,
-        alert_created: alertCreated,
-        alert_id: alertId,
-        alert_type: alertType,
-        violations,
+        persons_detected: results.length,
+        results: allResults,
         zone_rules_applied: zoneRulesApplied,
         snapshot_url: snapshotUrl,
       }),

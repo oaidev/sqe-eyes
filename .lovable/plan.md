@@ -1,39 +1,88 @@
 
 
-## Plan: Multi-Person Detection Support
+# Analisis End-to-End & Rencana User Management + RBAC
 
-### Masalah
-Saat ini edge function hanya menganalisis `Persons[0]` (orang pertama) dari respons AWS `DetectProtectiveEquipment`. Orang ke-2, ke-3, dst diabaikan total.
+## Status Fitur Saat Ini
 
-Selain itu, `SearchFacesByImage` hanya mencari `MaxFaces: 1`. Jadi hanya 1 wajah yang diidentifikasi.
+| Fitur | Status | Catatan |
+|-------|--------|---------|
+| Auth (Login/Register) | ✅ Berfungsi | Login, register, logout bekerja |
+| Dashboard | ✅ Berfungsi | Statistik real-time |
+| Kelola Pekerja | ✅ Berfungsi | CRUD + CSV import + face enrollment |
+| Zona & Kamera | ✅ Berfungsi | CRUD zona dan kamera |
+| Aturan APD | ✅ Berfungsi | Matriks toggle per zona |
+| Aturan Akses | ✅ Berfungsi | CRUD aturan akses zona |
+| Live Kamera | ✅ Berfungsi | Grid kamera + simulasi deteksi |
+| Event Terkini | ✅ Berfungsi | Realtime + detail APD |
+| Inbox Alert | ✅ Berfungsi | Filter, teruskan, catatan |
+| Validasi Alert | ✅ Berfungsi | Form validasi supervisor |
+| Izin Keluar | ✅ Berfungsi | Buat + approve/reject |
+| Laporan Kepatuhan | ✅ Berfungsi | Chart bar + pie |
+| Rekap Pelanggaran | ✅ Berfungsi | Group by worker |
+| Ekspor Laporan | ⚠️ Parsial | Hanya insert record, tidak generate file |
+| **Kelola Pengguna** | ❌ Tidak ada | Tidak ada halaman user management |
+| **CRUD Role** | ❌ Tidak ada | Tidak ada UI assign/ubah/hapus role |
+| **Route Protection** | ❌ Tidak ada | Semua halaman bisa diakses via URL langsung |
+| **Permission per Menu** | ❌ Tidak ada | Sidebar filter saja, halaman tidak cek role |
 
-### Perubahan
+## Yang Perlu Dibangun
 
-#### 1. `supabase/functions/detect-event/index.ts`
-- **SearchFacesByImage**: Ganti ke `IndexFaces` atau gunakan `DetectFaces` dulu untuk mendapatkan semua bounding box wajah, lalu `SearchFacesByImage` per crop — ATAU lebih praktis: ubah `MaxFaces` ke 10 dan gunakan respons `SearchedFaceBoundingBox` untuk mapping.
+### 1. Halaman "Kelola Pengguna" (`/users`)
+Halaman admin-only untuk:
+- **Daftar semua user** — email, nama, role, status (dari `profiles` + `user_roles`)
+- **Invite user baru** — form email + role, panggil `supabase.auth.admin.inviteUserByEmail()` via edge function (karena admin API tidak bisa dipanggil dari client)
+- **Ubah role** — dropdown ganti role (admin/operator/supervisor/safety_manager)
+- **Hapus user** — soft-delete atau remove dari sistem via edge function
+- **Tampilkan user tanpa role** — highlight user yang belum di-assign role
 
-  **Pendekatan realistis**: AWS `SearchFacesByImage` hanya mencocokkan **1 wajah terbesar**. Untuk multi-face, kita perlu:
-  1. Panggil `DetectFaces` untuk mendapatkan semua bounding box
-  2. Untuk setiap wajah, crop image lalu panggil `SearchFacesByImage` per crop
+### 2. Edge Function `manage-users`
+Diperlukan karena operasi admin (invite, delete user, list users) membutuhkan `service_role_key`:
+- `POST /invite` — invite user by email + assign role
+- `POST /update-role` — update role user
+- `POST /delete-user` — delete user dari auth + cleanup
+- `GET /list` — list semua user dengan profile & role
 
-  Ini mahal (N+1 API calls). **Alternatif lebih efisien**: Gunakan `SearchFacesByImage` untuk wajah terbesar saja, tapi proses **semua Persons** dari `DetectProtectiveEquipment` untuk PPE.
+### 3. Role-Based Route Protection
+Saat ini sidebar menyembunyikan menu, tapi user bisa ketik URL langsung dan tetap masuk. Perlu:
+- Komponen `<ProtectedRoute roles={['admin']}>` yang wrap halaman
+- Redirect ke dashboard jika role tidak sesuai
+- Tambahkan di setiap route di `App.tsx`
 
-- **DetectProtectiveEquipment**: Loop semua `Persons[]`, bukan hanya `Persons[0]`. Setiap person mendapat analisis PPE sendiri.
+### 4. Permission Granular per Menu (View/Edit/Delete)
+Definisi permission matrix di kode:
 
-- **Response**: Ubah response dari single object ke array `results[]`, di mana setiap item = 1 person dengan PPE results-nya. Wajah yang dikenali di-match berdasarkan bounding box overlap.
+```text
+Menu                  | admin | operator | supervisor | safety_manager
+──────────────────────|───────|──────────|────────────|───────────────
+Dashboard             | view  | view     | view       | view
+Kelola Pekerja        | full  | —        | —          | —
+Zona & Kamera         | full  | —        | —          | —
+Aturan APD            | full  | —        | —          | —
+Aturan Akses          | full  | —        | —          | —
+Kelola Pengguna       | full  | —        | —          | —
+Live Kamera           | full  | view     | —          | —
+Event Terkini         | full  | view     | —          | —
+Inbox Alert           | full  | edit     | —          | —
+Validasi Alert        | full  | —        | edit       | —
+Izin Keluar           | full  | —        | edit       | —
+Laporan Kepatuhan     | view  | —        | —          | view
+Rekap Pelanggaran     | view  | —        | —          | view
+Ekspor Laporan        | full  | —        | —          | edit
+```
 
-- **Event/Alert creation**: Buat 1 event + 1 alert per person (bukan 1 total).
+### File yang Diubah/Dibuat
 
-#### 2. `src/pages/Simulate.tsx`
-- Update `DetectionResult` interface dan parsing untuk handle array results dari edge function
-- Setiap capture bisa menghasilkan **multiple result cards** (1 per person)
-- Update `runDetection` untuk push multiple results ke state
+1. **`supabase/functions/manage-users/index.ts`** — Edge function baru untuk admin user operations
+2. **`src/pages/Users.tsx`** — Halaman baru kelola pengguna
+3. **`src/components/layout/ProtectedRoute.tsx`** — Komponen route guard
+4. **`src/App.tsx`** — Tambah route `/users` + wrap semua route dengan ProtectedRoute
+5. **`src/components/layout/AppSidebar.tsx`** — Tambah menu "Kelola Pengguna"
+6. **`src/lib/permissions.ts`** — Permission matrix & helper `canAccess(role, page, action)`
+7. **Database migration** — Update RLS policy pada `profiles` agar admin bisa lihat semua profile
 
-### Estimasi Kompleksitas
-- Edge function: Moderate — loop Persons[], multi-event insert, bounding box matching
-- Frontend: Minor — parse array instead of single object
-
-### Files Changed
-- `supabase/functions/detect-event/index.ts` — multi-person PPE loop, multi-event/alert creation, array response
-- `src/pages/Simulate.tsx` — handle array response, display multiple results per capture
+### Alur Invite User
+1. Admin buka `/users` → klik "Invite User"
+2. Isi email + pilih role → panggil edge function `manage-users/invite`
+3. Edge function: `supabase.auth.admin.inviteUserByEmail()` + insert ke `user_roles`
+4. User terima email → klik link → set password → login dengan role yang sudah di-assign
 
