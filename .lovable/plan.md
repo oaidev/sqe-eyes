@@ -1,88 +1,62 @@
 
 
-# Analisis End-to-End & Rencana User Management + RBAC
+## Analisis: Mapping & Deteksi — Temuan dari Log
 
-## Status Fitur Saat Ini
+Saya menganalisis log edge function dan data `zone_ppe_rules`. Berikut temuan:
 
-| Fitur | Status | Catatan |
-|-------|--------|---------|
-| Auth (Login/Register) | ✅ Berfungsi | Login, register, logout bekerja |
-| Dashboard | ✅ Berfungsi | Statistik real-time |
-| Kelola Pekerja | ✅ Berfungsi | CRUD + CSV import + face enrollment |
-| Zona & Kamera | ✅ Berfungsi | CRUD zona dan kamera |
-| Aturan APD | ✅ Berfungsi | Matriks toggle per zona |
-| Aturan Akses | ✅ Berfungsi | CRUD aturan akses zona |
-| Live Kamera | ✅ Berfungsi | Grid kamera + simulasi deteksi |
-| Event Terkini | ✅ Berfungsi | Realtime + detail APD |
-| Inbox Alert | ✅ Berfungsi | Filter, teruskan, catatan |
-| Validasi Alert | ✅ Berfungsi | Form validasi supervisor |
-| Izin Keluar | ✅ Berfungsi | Buat + approve/reject |
-| Laporan Kepatuhan | ✅ Berfungsi | Chart bar + pie |
-| Rekap Pelanggaran | ✅ Berfungsi | Group by worker |
-| Ekspor Laporan | ⚠️ Parsial | Hanya insert record, tidak generate file |
-| **Kelola Pengguna** | ❌ Tidak ada | Tidak ada halaman user management |
-| **CRUD Role** | ❌ Tidak ada | Tidak ada UI assign/ubah/hapus role |
-| **Route Protection** | ❌ Tidak ada | Semua halaman bisa diakses via URL langsung |
-| **Permission per Menu** | ❌ Tidak ada | Sidebar filter saja, halaman tidak cek role |
+### Temuan dari Log AWS
 
-## Yang Perlu Dibangun
-
-### 1. Halaman "Kelola Pengguna" (`/users`)
-Halaman admin-only untuk:
-- **Daftar semua user** — email, nama, role, status (dari `profiles` + `user_roles`)
-- **Invite user baru** — form email + role, panggil `supabase.auth.admin.inviteUserByEmail()` via edge function (karena admin API tidak bisa dipanggil dari client)
-- **Ubah role** — dropdown ganti role (admin/operator/supervisor/safety_manager)
-- **Hapus user** — soft-delete atau remove dari sistem via edge function
-- **Tampilkan user tanpa role** — highlight user yang belum di-assign role
-
-### 2. Edge Function `manage-users`
-Diperlukan karena operasi admin (invite, delete user, list users) membutuhkan `service_role_key`:
-- `POST /invite` — invite user by email + assign role
-- `POST /update-role` — update role user
-- `POST /delete-user` — delete user dari auth + cleanup
-- `GET /list` — list semua user dengan profile & role
-
-### 3. Role-Based Route Protection
-Saat ini sidebar menyembunyikan menu, tapi user bisa ketik URL langsung dan tetap masuk. Perlu:
-- Komponen `<ProtectedRoute roles={['admin']}>` yang wrap halaman
-- Redirect ke dashboard jika role tidak sesuai
-- Tambahkan di setiap route di `App.tsx`
-
-### 4. Permission Granular per Menu (View/Edit/Delete)
-Definisi permission matrix di kode:
-
+PPE raw response untuk Person 0:
 ```text
-Menu                  | admin | operator | supervisor | safety_manager
-──────────────────────|───────|──────────|────────────|───────────────
-Dashboard             | view  | view     | view       | view
-Kelola Pekerja        | full  | —        | —          | —
-Zona & Kamera         | full  | —        | —          | —
-Aturan APD            | full  | —        | —          | —
-Aturan Akses          | full  | —        | —          | —
-Kelola Pengguna       | full  | —        | —          | —
-Live Kamera           | full  | view     | —          | —
-Event Terkini         | full  | view     | —          | —
-Inbox Alert           | full  | edit     | —          | —
-Validasi Alert        | full  | —        | edit       | —
-Izin Keluar           | full  | —        | edit       | —
-Laporan Kepatuhan     | view  | —        | —          | view
-Rekap Pelanggaran     | view  | —        | —          | view
-Ekspor Laporan        | full  | —        | —          | edit
+FACE:       EquipmentDetections: []     → tidak ada kacamata/face cover terdeteksi
+LEFT_HAND:  EquipmentDetections: []     → tidak ada sarung tangan terdeteksi  
+RIGHT_HAND: EquipmentDetections: []     → tidak ada sarung tangan terdeteksi
+HEAD:       EquipmentDetections: [{Confidence: 99.4, CoversBodyPart: true}]  → helm ✅
 ```
 
-### File yang Diubah/Dibuat
+Artinya: AWS memang **tidak menemukan** equipment di wajah dan tangan. Ini bukan masalah threshold kita — AWS mengembalikan array kosong (`[]`), bukan confidence rendah.
 
-1. **`supabase/functions/manage-users/index.ts`** — Edge function baru untuk admin user operations
-2. **`src/pages/Users.tsx`** — Halaman baru kelola pengguna
-3. **`src/components/layout/ProtectedRoute.tsx`** — Komponen route guard
-4. **`src/App.tsx`** — Tambah route `/users` + wrap semua route dengan ProtectedRoute
-5. **`src/components/layout/AppSidebar.tsx`** — Tambah menu "Kelola Pengguna"
-6. **`src/lib/permissions.ts`** — Permission matrix & helper `canAccess(role, page, action)`
-7. **Database migration** — Update RLS policy pada `profiles` agar admin bisa lihat semua profile
+### Masalah 1: Data `zone_ppe_rules` Masih Punya FACE_COVER
 
-### Alur Invite User
-1. Admin buka `/users` → klik "Invite User"
-2. Isi email + pilih role → panggil edge function `manage-users/invite`
-3. Edge function: `supabase.auth.admin.inviteUserByEmail()` + insert ke `user_roles`
-4. User terima email → klik link → set password → login dengan role yang sudah di-assign
+Zone `b1...0004` punya **KEDUA** item:
+- `FACE_COVER` (jabatan: null — berlaku semua)  
+- `SAFETY_GLASSES` (jabatan: Mekanik)
+
+Kode sudah normalisasi `FACE_COVER` → `SAFETY_GLASSES`, tapi data ganda ini membingungkan dan bisa menyebabkan duplikasi di UI.
+
+### Masalah 2: Sepatu & Rompi Bersifat Global (Paling Berdampak)
+
+`DetectLabels` mendeteksi sepatu/rompi untuk **seluruh gambar**, bukan per orang. Akibatnya:
+- Jika 1 orang pakai rompi → semua 6 orang ditandai "rompi ✅"
+- Jika label "boot"/"vest" **tidak ditemukan** di gambar → **semua 6 orang** ditandai merah
+
+Ini adalah penyebab utama banyak item merah. DetectLabels mencari label generik ("boot", "vest") yang sering tidak muncul pada foto pekerja di tambang.
+
+### Masalah 3: Body Part yang Tidak Terdeteksi AWS = Kosong
+
+AWS `DetectProtectiveEquipment` hanya mendeteksi 3 tipe: `FACE_COVER`, `HEAD_COVER`, `HAND_COVER`. Jika orang kecil/jauh/tertutup di gambar, AWS mengembalikan `EquipmentDetections: []` — ini bukan threshold, ini limitasi AWS.
+
+---
+
+### Rencana Perbaikan
+
+#### 1. `supabase/functions/detect-event/index.ts` — Perbaiki deteksi sepatu & rompi
+
+Saat ini sepatu/rompi dicek via `DetectLabels` global. Perbaikan:
+- Tambah **lebih banyak keyword** untuk shoe: `"steel toe"`, `"cowboy boot"`, `"hiking boot"`, `"sneaker"`, `"rubber boot"`, `"protective footwear"`, `"clothing"`, `"apparel"`
+- Tambah keyword untuk vest: `"uniform"`, `"overall"`, `"coverall"`, `"workwear"`, `"outerwear"`, `"fluorescent"`
+- **Turunkan MinConfidence** DetectLabels dari `40` → `30`
+- Jika label `"Person"` terdeteksi dan gambar jelas menampilkan pekerja, asumsikan sepatu ada (karena hampir pasti pekerja pakai alas kaki) — opsional, bisa diatur via flag
+
+#### 2. `supabase/functions/detect-event/index.ts` — Fallback detection logic
+
+Tambahkan logika: jika body part confidence tinggi (>90%) tapi `EquipmentDetections` kosong, log secara eksplisit bahwa item **tidak dipakai** (bukan "tidak terdeteksi"). Ini membantu membedakan "AWS yakin tidak ada" vs "AWS tidak bisa lihat".
+
+#### 3. Database migration — Bersihkan FACE_COVER di zone_ppe_rules  
+
+Update semua `ppe_item = 'FACE_COVER'` → `'SAFETY_GLASSES'` agar konsisten. Hapus duplikat yang terbentuk setelah update.
+
+### Files Changed
+- `supabase/functions/detect-event/index.ts` — keyword diperluas, MinConfidence diturunkan, logging diperbaiki
+- Database migration — normalisasi FACE_COVER → SAFETY_GLASSES di zone_ppe_rules
 
