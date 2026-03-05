@@ -107,6 +107,7 @@ export type Database = {
       }
       events: {
         Row: {
+          bounding_box: Json | null
           camera_id: string | null
           created_at: string
           detected_at: string
@@ -117,6 +118,7 @@ export type Database = {
           worker_id: string | null
         }
         Insert: {
+          bounding_box?: Json | null
           camera_id?: string | null
           created_at?: string
           detected_at?: string
@@ -127,6 +129,7 @@ export type Database = {
           worker_id?: string | null
         }
         Update: {
+          bounding_box?: Json | null
           camera_id?: string | null
           created_at?: string
           detected_at?: string
