@@ -22,6 +22,7 @@ interface BoundingBoxData {
 interface DetectionResult {
   id: string;
   timestamp: Date;
+  personIndex: number;
   worker: { nama: string; sid: string; jabatan: string } | null;
   ppe_results: Record<string, { detected: boolean; confidence: number }>;
   alert_created: boolean;
@@ -29,6 +30,8 @@ interface DetectionResult {
   jenisPelanggaran: string;
   boundingBox: BoundingBoxData | null;
 }
+
+const ALL_PPE_ITEMS = ['HEAD_COVER', 'HAND_COVER', 'SAFETY_GLASSES', 'SAFETY_SHOES', 'REFLECTIVE_VEST'] as const;
 
 const ppeLabel: Record<string, string> = {
   HEAD_COVER: 'Helm', HAND_COVER: 'Sarung Tangan', SAFETY_GLASSES: 'Kacamata Safety',
@@ -125,6 +128,7 @@ export default function Simulate() {
       if (personResults.length === 0) {
         const result: DetectionResult = {
           id: crypto.randomUUID(), timestamp: new Date(),
+          personIndex: 1,
           worker: data.worker || null,
           ppe_results: data.ppe_results || {},
           alert_created: !!data.alert_id, alert_type: data.alert_type,
@@ -133,9 +137,10 @@ export default function Simulate() {
         };
         setResults(prev => [result, ...prev].slice(0, 20));
       } else {
-        const newResults: DetectionResult[] = personResults.map((p: any) => ({
+        const newResults: DetectionResult[] = personResults.map((p: any, idx: number) => ({
           id: crypto.randomUUID(),
           timestamp: new Date(),
+          personIndex: idx + 1,
           worker: p.worker || null,
           ppe_results: p.ppe_results || {},
           alert_created: !!p.alert_id,
@@ -318,6 +323,7 @@ export default function Simulate() {
                       workerName: r.worker?.nama || null,
                       hasViolation,
                       ppeStatus: ppeItems,
+                      personIndex: r.personIndex,
                     };
                   })}
               />
@@ -335,12 +341,17 @@ export default function Simulate() {
                   {results.map((r, i) => (
                     <Card key={r.id} className={i === 0 ? 'border-primary' : ''}>
                       <CardContent className="p-3 space-y-2">
-                        {/* 1. Tanggal & Waktu */}
-                        <p className="text-[10px] text-muted-foreground">
-                          {r.timestamp.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}, {r.timestamp.toLocaleTimeString('id-ID')}
-                        </p>
+                        {/* Person index badge */}
+                        <div className="flex items-center justify-between">
+                          <Badge variant="outline" className="text-[10px] font-bold">
+                            Person {r.personIndex}
+                          </Badge>
+                          <p className="text-[10px] text-muted-foreground">
+                            {r.timestamp.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}, {r.timestamp.toLocaleTimeString('id-ID')}
+                          </p>
+                        </div>
 
-                        {/* 2. SID & Nama */}
+                        {/* SID & Nama */}
                         <div className="flex items-center gap-2">
                           {r.worker ? (
                             <>
@@ -352,10 +363,10 @@ export default function Simulate() {
                           )}
                         </div>
 
-                        {/* 3. Jabatan */}
+                        {/* Jabatan */}
                         <p className="text-xs text-muted-foreground">Jabatan: {r.worker?.jabatan || '-'}</p>
 
-                        {/* 4. Jenis Pelanggaran */}
+                        {/* Jenis Pelanggaran */}
                         <div className="flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3 text-destructive" />
                           <Badge variant="destructive" className="text-[10px]">
@@ -363,20 +374,29 @@ export default function Simulate() {
                           </Badge>
                         </div>
 
-                        {/* 5. Detail berdasarkan jenis pelanggaran */}
+                        {/* PPE Checklist - show all 5 items */}
                         {r.jenisPelanggaran === 'KELUAR_TANPA_IZIN' ? (
                           <p className="text-xs text-destructive ml-4">Tidak Ada Izin</p>
                         ) : (
-                          Object.keys(r.ppe_results).length > 0 && (
-                            <div className="flex flex-wrap gap-1 ml-4">
-                              {Object.entries(r.ppe_results).map(([item, val]) => (
-                                <Badge key={item} variant={val.detected ? 'default' : 'destructive'} className="text-[9px] gap-0.5">
-                                  {val.detected ? <ShieldCheck className="h-2.5 w-2.5" /> : <ShieldAlert className="h-2.5 w-2.5" />}
+                          <div className="flex flex-wrap gap-1 ml-4">
+                            {ALL_PPE_ITEMS.map(item => {
+                              const result = r.ppe_results[item];
+                              if (!result) {
+                                // Not checked by zone rules
+                                return (
+                                  <Badge key={item} variant="secondary" className="text-[9px] gap-0.5 opacity-60">
+                                    {ppeLabel[item] || item} —
+                                  </Badge>
+                                );
+                              }
+                              return (
+                                <Badge key={item} variant={result.detected ? 'default' : 'destructive'} className="text-[9px] gap-0.5">
+                                  {result.detected ? <ShieldCheck className="h-2.5 w-2.5" /> : <ShieldAlert className="h-2.5 w-2.5" />}
                                   {ppeLabel[item] || item}
                                 </Badge>
-                              ))}
-                            </div>
-                          )
+                              );
+                            })}
+                          </div>
                         )}
                       </CardContent>
                     </Card>
