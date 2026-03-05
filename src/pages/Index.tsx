@@ -68,22 +68,32 @@ export default function Index() {
     queryKey: ['stats-7day-alerts'],
     queryFn: async () => {
       const from = format(subDays(new Date(), 6), 'yyyy-MM-dd');
-      const { data } = await supabase.from('alerts').select('id, created_at').gte('created_at', `${from}T00:00:00`);
+      const { data } = await supabase.from('alerts').select('id, created_at, alert_type').gte('created_at', `${from}T00:00:00`);
       return data || [];
     },
   });
 
-  const { data: chartValidationAlertIds = [] } = useQuery({
-    queryKey: ['stats-7day-validation-ids'],
+  const { data: chartValidations = [] } = useQuery({
+    queryKey: ['stats-7day-validations'],
     queryFn: async () => {
       const from = format(subDays(new Date(), 6), 'yyyy-MM-dd');
-      const { data } = await supabase.from('supervisor_validations').select('alert_id').gte('created_at', `${from}T00:00:00`);
-      return (data || []).map((v: any) => v.alert_id);
+      const { data } = await supabase.from('supervisor_validations').select('alert_id, status').gte('created_at', `${from}T00:00:00`);
+      return data || [];
     },
   });
 
+  const validationMap = useMemo(() => {
+    const map = new Map<string, string>();
+    chartValidations.forEach((v: any) => map.set(v.alert_id, v.status));
+    return map;
+  }, [chartValidations]);
+
+  const makeDays = () => Array.from({ length: 7 }, (_, i) => {
+    const d = subDays(new Date(), 6 - i);
+    return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: idLocale }), valid: 0, tidak_valid: 0, belum: 0 };
+  });
+
   const chartData = useMemo(() => {
-    const validatedSet = new Set(chartValidationAlertIds);
     const days = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i);
       return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: idLocale }), sudah: 0, belum: 0 };
@@ -92,12 +102,40 @@ export default function Index() {
       const aDate = a.created_at?.substring(0, 10);
       const day = days.find(d => d.date === aDate);
       if (day) {
-        if (validatedSet.has(a.id)) day.sudah++;
+        if (validationMap.has(a.id)) day.sudah++;
         else day.belum++;
       }
     });
     return days;
-  }, [chartAlerts, chartValidationAlertIds]);
+  }, [chartAlerts, validationMap]);
+
+  const apdChartData = useMemo(() => {
+    const days = makeDays();
+    chartAlerts.filter((a: any) => a.alert_type === 'APD_VIOLATION' || a.alert_type === 'UNKNOWN_PERSON').forEach((a: any) => {
+      const day = days.find(d => d.date === a.created_at?.substring(0, 10));
+      if (day) {
+        const status = validationMap.get(a.id);
+        if (status === 'VALID') day.valid++;
+        else if (status === 'TIDAK_VALID') day.tidak_valid++;
+        else day.belum++;
+      }
+    });
+    return days;
+  }, [chartAlerts, validationMap]);
+
+  const exitChartData = useMemo(() => {
+    const days = makeDays();
+    chartAlerts.filter((a: any) => a.alert_type === 'UNAUTHORIZED_EXIT').forEach((a: any) => {
+      const day = days.find(d => d.date === a.created_at?.substring(0, 10));
+      if (day) {
+        const status = validationMap.get(a.id);
+        if (status === 'VALID') day.valid++;
+        else if (status === 'TIDAK_VALID') day.tidak_valid++;
+        else day.belum++;
+      }
+    });
+    return days;
+  }, [chartAlerts, validationMap]);
 
   return (
     <AppLayout title="Dashboard">
