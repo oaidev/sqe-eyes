@@ -424,6 +424,7 @@ Deno.serve(async (req) => {
       confidenceScore: number | null;
       ppeResults: Record<string, { detected: boolean; confidence: number }>;
       personIndex: number;
+      boundingBox: { Left: number; Top: number; Width: number; Height: number } | null;
     }
 
     const results: PersonResult[] = [];
@@ -466,6 +467,7 @@ Deno.serve(async (req) => {
           confidenceScore: matchedFace?.confidenceScore || null,
           ppeResults: mergedPPE,
           personIndex: ppePerson.personIdx,
+          boundingBox: ppePerson.boundingBox || null,
         });
       }
     } else {
@@ -481,6 +483,7 @@ Deno.serve(async (req) => {
           confidenceScore: face.confidenceScore,
           ppeResults: mergedPPE,
           personIndex: 0,
+          boundingBox: face.boundingBox || null,
         });
       }
     }
@@ -640,6 +643,7 @@ Deno.serve(async (req) => {
         alert_type: alertType,
         violations,
         person_index: person.personIndex,
+        bounding_box: person.boundingBox,
       });
     }
 

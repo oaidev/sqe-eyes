@@ -13,6 +13,11 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
+
+interface BoundingBoxData {
+  Left: number; Top: number; Width: number; Height: number;
+}
 
 interface DetectionResult {
   id: string;
@@ -22,6 +27,7 @@ interface DetectionResult {
   alert_created: boolean;
   alert_type?: string;
   jenisPelanggaran: string;
+  boundingBox: BoundingBoxData | null;
 }
 
 const ppeLabel: Record<string, string> = {
@@ -37,7 +43,7 @@ export default function Simulate() {
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(5);
   const autoCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-
+  const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
   const webcamStreamRef = useRef<MediaStream | null>(null);
@@ -105,6 +111,7 @@ export default function Simulate() {
       return;
     }
     setDetecting(true);
+    setLastCapturedImage(`data:image/jpeg;base64,${imageBase64}`);
     try {
       const { data, error } = await supabase.functions.invoke('detect-event', {
         body: { image_base64: imageBase64, camera_id: selectedCameraId },
@@ -116,13 +123,13 @@ export default function Simulate() {
       // Handle multi-person array response
       const personResults = data.results || [];
       if (personResults.length === 0) {
-        // Fallback for backward compatibility (single result)
         const result: DetectionResult = {
           id: crypto.randomUUID(), timestamp: new Date(),
           worker: data.worker || null,
           ppe_results: data.ppe_results || {},
           alert_created: !!data.alert_id, alert_type: data.alert_type,
           jenisPelanggaran,
+          boundingBox: data.bounding_box || null,
         };
         setResults(prev => [result, ...prev].slice(0, 20));
       } else {
@@ -134,6 +141,7 @@ export default function Simulate() {
           alert_created: !!p.alert_id,
           alert_type: p.alert_type,
           jenisPelanggaran,
+          boundingBox: p.bounding_box || null,
         }));
         setResults(prev => [...newResults, ...prev].slice(0, 20));
       }
@@ -291,6 +299,30 @@ export default function Simulate() {
               )}
             </TabsContent>
           </Tabs>
+
+          {/* Bounding box overlay - shown after detection */}
+          {lastCapturedImage && results.length > 0 && (
+            <div className="md:col-span-2">
+              <h3 className="font-semibold text-sm mb-2">Hasil Visual Deteksi</h3>
+              <BoundingBoxOverlay
+                imageSrc={lastCapturedImage}
+                persons={results
+                  .filter(r => r.timestamp.getTime() === results[0]?.timestamp.getTime())
+                  .map(r => {
+                    const hasViolation = !r.worker || Object.values(r.ppe_results).some(v => !v.detected) || r.alert_created;
+                    const ppeItems = Object.entries(r.ppe_results)
+                      .map(([k, v]) => `${ppeLabel[k] || k} ${v.detected ? '✓' : '✗'}`)
+                      .join(', ');
+                    return {
+                      boundingBox: r.boundingBox,
+                      workerName: r.worker?.nama || null,
+                      hasViolation,
+                      ppeStatus: ppeItems,
+                    };
+                  })}
+              />
+            </div>
+          )}
 
           {/* Right: results panel */}
           <div className="space-y-3">
