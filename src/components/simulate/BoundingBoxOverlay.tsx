@@ -63,7 +63,7 @@ export function BoundingBoxOverlay({ imageSrc, persons }: BoundingBoxOverlayProp
       </svg>
       {/* HTML labels for better text rendering */}
       {boxes.map((person, i) => {
-        const bb = person.boundingBox!;
+        const colorClass = person.hasViolation ? 'bg-red-500' : 'bg-green-500';
         const label = `#${person.personIndex} ${person.workerName || 'Tidak Dikenal'}`;
         return (
           <div
