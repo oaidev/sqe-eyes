@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -335,12 +336,29 @@ export default function OperatorValidation() {
                 </div>
               )}
 
-              {/* Evidence */}
+              {/* Evidence with bounding box */}
               <div className="space-y-3">
                 {selectedEvent.snapshot_url && (
                   <div>
                     <Label className="text-sm font-medium">Foto Evidence</Label>
-                    <img src={selectedEvent.snapshot_url} alt="Snapshot" className="mt-1 rounded-lg border max-h-64 object-contain w-full" />
+                    {selectedEvent.bounding_box ? (
+                      <div className="mt-1">
+                        <BoundingBoxOverlay
+                          imageSrc={selectedEvent.snapshot_url}
+                          persons={[{
+                            boundingBox: selectedEvent.bounding_box,
+                            workerName: selectedEvent.workers?.nama || null,
+                            hasViolation: Object.values(selectedEvent.ppe_results || {}).some((v: any) => !v?.detected),
+                            ppeStatus: Object.entries(selectedEvent.ppe_results || {})
+                              .map(([k, v]: [string, any]) => `${PPE_LABELS[k] || k} ${v?.detected ? '✓' : '✗'}`)
+                              .join(', '),
+                            personIndex: 1,
+                          }]}
+                        />
+                      </div>
+                    ) : (
+                      <img src={selectedEvent.snapshot_url} alt="Snapshot" className="mt-1 rounded-lg border max-h-64 object-contain w-full" />
+                    )}
                   </div>
                 )}
               </div>
