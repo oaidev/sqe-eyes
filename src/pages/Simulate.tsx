@@ -300,6 +300,30 @@ export default function Simulate() {
             </TabsContent>
           </Tabs>
 
+          {/* Bounding box overlay - shown after detection */}
+          {lastCapturedImage && results.length > 0 && (
+            <div className="md:col-span-2">
+              <h3 className="font-semibold text-sm mb-2">Hasil Visual Deteksi</h3>
+              <BoundingBoxOverlay
+                imageSrc={lastCapturedImage}
+                persons={results
+                  .filter(r => r.timestamp.getTime() === results[0]?.timestamp.getTime())
+                  .map(r => {
+                    const hasViolation = !r.worker || Object.values(r.ppe_results).some(v => !v.detected) || r.alert_created;
+                    const ppeItems = Object.entries(r.ppe_results)
+                      .map(([k, v]) => `${ppeLabel[k] || k} ${v.detected ? '✓' : '✗'}`)
+                      .join(', ');
+                    return {
+                      boundingBox: r.boundingBox,
+                      workerName: r.worker?.nama || null,
+                      hasViolation,
+                      ppeStatus: ppeItems,
+                    };
+                  })}
+              />
+            </div>
+          )}
+
           {/* Right: results panel */}
           <div className="space-y-3">
             <h3 className="font-semibold text-sm">Hasil Deteksi</h3>
