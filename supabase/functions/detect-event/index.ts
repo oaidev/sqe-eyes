@@ -483,6 +483,7 @@ Deno.serve(async (req) => {
           confidenceScore: face.confidenceScore,
           ppeResults: mergedPPE,
           personIndex: 0,
+          boundingBox: face.boundingBox || null,
         });
       }
     }
