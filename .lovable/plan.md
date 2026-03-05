@@ -1,58 +1,53 @@
 
 
-## Plan: Multi-Face Identification & Redesigned Bounding Box Overlay
+## Plan: Fix Bounding Box Overlay & Face Identification Issues
 
-### Issue 1: Only 1 face identified in multi-person images
+### Issue Analysis
 
-**Root cause**: `SearchFacesByImage` (line 242-250) uses `MaxFaces: 1`, so AWS only identifies the largest/most prominent face. The second person always shows as "Tidak Dikenal".
+From the screenshot: both persons show as "Tidak Dikenal" with orange bounding boxes and "Orang Tidak Dikenal" violation row, despite both having Helm and Rompi Reflektif detected (APD lengkap). Three problems:
 
-**Fix** (`supabase/functions/detect-event/index.ts`):
-- After DetectFaces returns all face bounding boxes, crop each face individually from the image using canvas-like pixel extraction (base64 crop)
-- For each cropped face, call `SearchFacesByImage` separately so each person can be identified
-- This replaces the single `SearchFacesByImage` call with a loop over all detected faces
+1. **Bounding box color wrong**: Both boxes are orange/red. Since APD is lengkap, compliant persons should have green boxes. The overlay shows "Orang Tidak Dikenal" as violation row even though the real issue is just identity — if APD is complete, box should be green for the APD portion.
+2. **Violation row shows "Orang Tidak Dikenal" instead of actual violation type**: Row 2 should show the jenis pelanggaran context (e.g., nothing if APD lengkap, or the specific missing items).
+3. **Face identification failing for multi-person**: The cropping approach may be failing silently. Need to check edge function logs, but likely the `jpeg-js` decode/encode is producing images that AWS can't process, or the crop region is too large/small.
 
-Since Edge Functions (Deno) don't have Canvas API, alternative approach:
-- Use `IndexFaces` with `MaxFaces: 1` per call won't work either since we can't crop
-- Better approach: Call `SearchFacesByImage` multiple times isn't possible with full image (always returns largest face)
-- **Best approach**: Use `IndexFaces` temporarily or use AWS `SearchFacesByImage` but with image cropping via bounding box coordinates. AWS Rekognition does NOT support crop parameters directly.
-- **Practical solution**: After detecting all faces with `DetectFaces`, iterate through faces. For the first identification, use `SearchFacesByImage` as-is (identifies largest face). For remaining unidentified faces — we can't crop server-side easily in Deno without image libraries.
+### Changes
 
-**Revised approach**: Instead of cropping, we can use the fact that `SearchFacesByImage` returns `SearchedFaceBoundingBox`. We'll call it once but then also try `SearchFaces` using FaceIds from an indexed collection. However, we'd need faces already indexed.
+#### 1. `BoundingBoxOverlay.tsx` — Fix two-row label logic
 
-**Most practical fix**: Change `MaxFaces` to a higher number (e.g., 5) in `SearchFacesByImage`. AWS `SearchFacesByImage` with `MaxFaces > 1` still only searches for the **single largest face** in the input image — `MaxFaces` controls how many matches to return from the collection, not how many faces to search.
+**Current problem**: `hasViolation` is `true` when `status === 'unknown'`, which forces orange box + "Orang Tidak Dikenal" violation text. But the user wants:
+- Row 1 (Identity): Green if known, orange if unknown — this is correct
+- Row 2 (Violation): Only show if there's an *actual PPE/zone violation*, NOT just because identity is unknown
+- Box color: Should reflect PPE compliance, not identity. Green if APD lengkap (even if unknown person), red if APD violation or keluar zona.
 
-**Actual solution**: We need to crop faces client-side before sending, OR use a workaround:
-1. Use the detected face bounding boxes from `DetectFaces` 
-2. For each face, crop the base64 image to that bounding box region using Deno image manipulation
-3. Call `SearchFacesByImage` for each cropped face image
+**Fix**:
+- Separate identity status from violation status
+- Box color = green if no PPE violations, red if PPE violations or keluar zona
+- Row 2 = only shown when there's a PPE violation or keluar zona, with red background
+- Remove "Orang Tidak Dikenal" as a violation row — identity is already shown in row 1
 
-I'll implement face cropping in the edge function using raw pixel manipulation of the base64 JPEG. We can use the `imagescript` Deno library or do a simpler approach: pass bounding box info and use a pure-JS JPEG crop library.
+#### 2. `Simulate.tsx` — Fix status calculation for overlay
 
-**Simplest reliable approach**: Use the npm package available via esm.sh for image cropping in Deno, or manually construct cropped images. Given complexity, the most pragmatic path is:
-- Decode base64 to raw bytes
-- Use `sharp` or a lightweight alternative via esm.sh
-- Crop each face region and search separately
+**Current**: `status` is set to `'unknown'` when worker is null, which drives box color to orange.
 
-### Issue 2: Redesigned Bounding Box Overlay
+**Fix**: Status should be based on PPE compliance, not identity:
+- `'compliant'` if all PPE detected (regardless of identity)
+- `'violation'` if any PPE missing or keluar zona
 
-**Current**: Single label bar above bounding box with name + PPE checklist in one line.
+#### 3. `Simulate.tsx` — Fix badge in Hasil Deteksi (results panel)
 
-**New design** — two-row label per person:
-- **Row 1 (Identity)**: Green background if recognized, orange if unknown. Shows `#N Name` or `#N Tidak Dikenal`
-- **Row 2 (Violation)**: Red background. For "Keluar Zona": shows "Pekerja Keluar Dari Area Kerja". For APD violations: shows only the missing PPE items with ✗ icons. Hidden if compliant (no violations).
+The badge should also reflect jenis pelanggaran properly — currently for unknown persons it always shows "Tidak Dikenal" badge regardless of APD status.
 
-**Changes to `BoundingBoxOverlay.tsx`**:
-- Add `jenisPelanggaran` field to `PersonBox` interface
-- Split the label into two rows: identity row + violation row
-- Identity row: green (known) or orange (unknown)
-- Violation row: red, only shown when there's a violation
+#### 4. `detect-event/index.ts` — Fix face cropping for multi-person identification
 
-**Changes to `Simulate.tsx`**:
-- Pass `jenisPelanggaran` to the overlay component
-- Update ppeStatus to only contain violation items (missing PPE with ✗)
+The `jpeg-js` library may be producing images that AWS rejects. Potential issues:
+- `Buffer.alloc` may not work in Deno (it's a Node.js API)
+- The crop may produce too-small images
+- Error is silently caught and skipped
+
+**Fix**: Add better error logging, use `Uint8Array` instead of `Buffer`, and ensure the cropped JPEG is valid. Also increase padding to ensure enough face context for recognition.
 
 ### Files Changed
-1. `supabase/functions/detect-event/index.ts` — Loop `SearchFacesByImage` per cropped face for multi-person identification
-2. `src/components/simulate/BoundingBoxOverlay.tsx` — Two-row label design (identity + violation)
-3. `src/pages/Simulate.tsx` — Pass jenisPelanggaran to overlay, adjust ppeStatus generation
+1. `src/components/simulate/BoundingBoxOverlay.tsx` — Decouple identity from violation; box color based on PPE compliance
+2. `src/pages/Simulate.tsx` — Fix status logic and badge display
+3. `supabase/functions/detect-event/index.ts` — Fix Buffer→Uint8Array in crop function, improve error handling
 
