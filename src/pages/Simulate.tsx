@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
+import { PpeMatrixDisplay } from '@/components/simulate/PpeMatrixDisplay';
 
 interface BoundingBoxData {
   Left: number; Top: number; Width: number; Height: number;
