@@ -212,6 +212,12 @@ export default function Simulate() {
               Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}</Badge>
             </p>
           )}
+          {selectedCamera && (
+            <PpeMatrixDisplay
+              zoneId={(selectedCamera as any).zone_id}
+              zoneName={(selectedCamera as any).zones?.name}
+            />
+          )}
         </div>
 
         <div className="grid md:grid-cols-[1fr,320px] gap-4">
