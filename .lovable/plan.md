@@ -1,20 +1,23 @@
 
 
-## Plan: Hide PPE Matrix for Keluar Zona & Update Wording
+## Plan: Hide PPE Checklist from Bounding Box for Keluar Zona
 
-### Changes
+### Problem
+When camera type is "Keluar Zona" (`KELUAR_TANPA_IZIN`), the bounding box overlay still shows PPE checklist (e.g. "Rompi Reflektif ✓, Helm ✗, ..."). This is irrelevant for zone-exit violations.
 
-#### 1. Hide PPE Matrix for "Keluar Zona" cameras (`Simulate.tsx`)
-- Line 215-219: Wrap `PpeMatrixDisplay` with a condition to only show when `jenis_pelanggaran !== 'KELUAR_TANPA_IZIN'`
+### Change
 
-#### 2. Update detection output wording (`Simulate.tsx`)
-- Line 414: Replace `"Tidak Ada Izin"` with `"Pekerja Keluar Dari Area Kerja"`
+**`src/pages/Simulate.tsx`** (lines 326-333):
+- When `r.jenisPelanggaran === 'KELUAR_TANPA_IZIN'`, set `ppeStatus` to `'Keluar Zona'` (or empty string) instead of listing PPE items.
 
-#### 3. Update validation reason labels (`OperatorValidation.tsx` & `SupervisorValidation.tsx`)
-- Line 40 in both files: Change `label: 'Tidak Ada Izin'` to `label: 'Pekerja Keluar Dari Area Kerja'`
+```typescript
+const ppeItems = r.jenisPelanggaran === 'KELUAR_TANPA_IZIN'
+  ? 'Keluar Zona'
+  : Object.entries(r.ppe_results)
+      .map(([k, v]) => `${ppeLabel[k] || k} ${v.detected ? '✓' : '✗'}`)
+      .join(', ');
+```
 
 ### Files Changed
-- `src/pages/Simulate.tsx` — conditional PPE matrix + updated description
-- `src/pages/OperatorValidation.tsx` — updated reason label
-- `src/pages/SupervisorValidation.tsx` — updated reason label
+- `src/pages/Simulate.tsx` — conditional ppeStatus based on jenisPelanggaran
 
