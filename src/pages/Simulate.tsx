@@ -27,6 +27,7 @@ interface DetectionResult {
 const ppeLabel: Record<string, string> = {
   HEAD_COVER: 'Helm', HAND_COVER: 'Sarung Tangan', SAFETY_GLASSES: 'Kacamata Safety',
   SAFETY_SHOES: 'Sepatu Safety', REFLECTIVE_VEST: 'Rompi Reflektif',
+  FACE_COVER: 'Kacamata Safety',
 };
 
 export default function Simulate() {
@@ -110,15 +111,33 @@ export default function Simulate() {
       });
       if (error) throw error;
       const cam = cameras.find((c: any) => c.id === selectedCameraId);
-      const result: DetectionResult = {
-        id: crypto.randomUUID(), timestamp: new Date(),
-        worker: data.worker || null,
-        ppe_results: data.ppe_results || {},
-        alert_created: !!data.alert_id, alert_type: data.alert_type,
-        jenisPelanggaran: (cam as any)?.jenis_pelanggaran || 'APD_TIDAK_LENGKAP',
-      };
-      setResults(prev => [result, ...prev].slice(0, 5));
-      toast.success('Deteksi selesai');
+      const jenisPelanggaran = (cam as any)?.jenis_pelanggaran || 'APD_TIDAK_LENGKAP';
+
+      // Handle multi-person array response
+      const personResults = data.results || [];
+      if (personResults.length === 0) {
+        // Fallback for backward compatibility (single result)
+        const result: DetectionResult = {
+          id: crypto.randomUUID(), timestamp: new Date(),
+          worker: data.worker || null,
+          ppe_results: data.ppe_results || {},
+          alert_created: !!data.alert_id, alert_type: data.alert_type,
+          jenisPelanggaran,
+        };
+        setResults(prev => [result, ...prev].slice(0, 20));
+      } else {
+        const newResults: DetectionResult[] = personResults.map((p: any) => ({
+          id: crypto.randomUUID(),
+          timestamp: new Date(),
+          worker: p.worker || null,
+          ppe_results: p.ppe_results || {},
+          alert_created: !!p.alert_id,
+          alert_type: p.alert_type,
+          jenisPelanggaran,
+        }));
+        setResults(prev => [...newResults, ...prev].slice(0, 20));
+      }
+      toast.success(`Deteksi selesai — ${personResults.length || 1} orang terdeteksi`);
     } catch (err: any) {
       toast.error(`Deteksi gagal: ${err.message}`);
     } finally { setDetecting(false); }
