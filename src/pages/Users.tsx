@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { UserPlus, Trash2, Shield, Loader2, Copy, Check } from 'lucide-react';
+import { UserPlus, Trash2, Pencil, Loader2, Copy, Check, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 
@@ -52,10 +52,18 @@ export default function Users() {
   const [editRole, setEditRole] = useState<AppRole>('operator');
   const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterRole, setFilterRole] = useState('all');
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['manage-users'],
     queryFn: async () => { const res = await invokeManageUsers('list', 'GET'); return res.users as UserRow[]; },
+  });
+
+  const filteredUsers = users.filter(u => {
+    const matchSearch = !searchQuery || u.email.toLowerCase().includes(searchQuery.toLowerCase()) || (u.full_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchRole = filterRole === 'all' || u.role === filterRole;
+    return matchSearch && matchRole;
   });
 
   const inviteMutation = useMutation({
@@ -96,8 +104,20 @@ export default function Users() {
   return (
     <AppLayout title="Kelola Pengguna">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <p className="text-muted-foreground text-sm">Invite, ubah role, atau hapus pengguna sistem</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 items-center gap-2">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Cari email atau nama..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9" />
+            </div>
+            <Select value={filterRole} onValueChange={setFilterRole}>
+              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Role" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Role</SelectItem>
+                {ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Invite User</Button>
         </div>
 
@@ -108,21 +128,22 @@ export default function Users() {
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Email</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead>Login Terakhir</TableHead><TableHead className="text-right">Aksi</TableHead>
+                   <TableRow>
+                    <TableHead>Email</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>Login Terakhir</TableHead><TableHead className="w-[80px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map(u => (
+                  {filteredUsers.map(u => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.full_name || '—'}</TableCell>
                       <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role || 'Belum ada role'}</Badge></TableCell>
-                      <TableCell><Badge variant={u.email_confirmed_at ? 'default' : 'outline'}>{u.email_confirmed_at ? 'Aktif' : 'Pending'}</Badge></TableCell>
                       <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID') : '—'}</TableCell>
-                      <TableCell className="text-right space-x-1">
-                        <Button size="sm" variant="outline" onClick={() => { setEditingUser(u); setEditRole(u.role || 'operator'); }}><Shield className="h-3 w-3 mr-1" /> Role</Button>
-                        <Button size="sm" variant="destructive" onClick={() => setDeleteUserId(u.id)}><Trash2 className="h-3 w-3" /></Button>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingUser(u); setEditRole(u.role || 'operator'); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteUserId(u.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

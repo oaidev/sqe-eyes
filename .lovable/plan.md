@@ -1,48 +1,88 @@
 
 
-## Plan: 7 Perubahan UI
+# Analisis End-to-End & Rencana User Management + RBAC
 
-### 1. Rename "Keluar Tanpa Izin" → "Keluar Zona"
-Update label text di semua file. Value enum `KELUAR_TANPA_IZIN` tetap sama (tidak ubah DB), hanya label display yang berubah.
+## Status Fitur Saat Ini
 
-**Files**: `OperatorValidation.tsx`, `SupervisorValidation.tsx`, `Zones.tsx`, `Simulate.tsx`, `Index.tsx`
+| Fitur | Status | Catatan |
+|-------|--------|---------|
+| Auth (Login/Register) | ✅ Berfungsi | Login, register, logout bekerja |
+| Dashboard | ✅ Berfungsi | Statistik real-time |
+| Kelola Pekerja | ✅ Berfungsi | CRUD + CSV import + face enrollment |
+| Zona & Kamera | ✅ Berfungsi | CRUD zona dan kamera |
+| Aturan APD | ✅ Berfungsi | Matriks toggle per zona |
+| Aturan Akses | ✅ Berfungsi | CRUD aturan akses zona |
+| Live Kamera | ✅ Berfungsi | Grid kamera + simulasi deteksi |
+| Event Terkini | ✅ Berfungsi | Realtime + detail APD |
+| Inbox Alert | ✅ Berfungsi | Filter, teruskan, catatan |
+| Validasi Alert | ✅ Berfungsi | Form validasi supervisor |
+| Izin Keluar | ✅ Berfungsi | Buat + approve/reject |
+| Laporan Kepatuhan | ✅ Berfungsi | Chart bar + pie |
+| Rekap Pelanggaran | ✅ Berfungsi | Group by worker |
+| Ekspor Laporan | ⚠️ Parsial | Hanya insert record, tidak generate file |
+| **Kelola Pengguna** | ❌ Tidak ada | Tidak ada halaman user management |
+| **CRUD Role** | ❌ Tidak ada | Tidak ada UI assign/ubah/hapus role |
+| **Route Protection** | ❌ Tidak ada | Semua halaman bisa diakses via URL langsung |
+| **Permission per Menu** | ❌ Tidak ada | Sidebar filter saja, halaman tidak cek role |
 
-### 2. Filter Status di Kelola Pekerja
-Tambah dropdown filter status (Aktif / Tidak Aktif) di samping filter Departemen yang sudah ada. Update `filtered` logic.
+## Yang Perlu Dibangun
 
-**File**: `Workers.tsx`
+### 1. Halaman "Kelola Pengguna" (`/users`)
+Halaman admin-only untuk:
+- **Daftar semua user** — email, nama, role, status (dari `profiles` + `user_roles`)
+- **Invite user baru** — form email + role, panggil `supabase.auth.admin.inviteUserByEmail()` via edge function (karena admin API tidak bisa dipanggil dari client)
+- **Ubah role** — dropdown ganti role (admin/operator/supervisor/safety_manager)
+- **Hapus user** — soft-delete atau remove dari sistem via edge function
+- **Tampilkan user tanpa role** — highlight user yang belum di-assign role
 
-### 3. Edit Role → Icon Pensil (tanpa border) di Kelola Pengguna
-Ganti `<Button size="sm" variant="outline">` dengan `<Button variant="ghost" size="icon">` + icon `Pencil` (bukan `Shield`). Samakan format dengan tombol aksi di Workers/Zones (ghost, icon-only, tanpa border).
+### 2. Edge Function `manage-users`
+Diperlukan karena operasi admin (invite, delete user, list users) membutuhkan `service_role_key`:
+- `POST /invite` — invite user by email + assign role
+- `POST /update-role` — update role user
+- `POST /delete-user` — delete user dari auth + cleanup
+- `GET /list` — list semua user dengan profile & role
 
-**File**: `Users.tsx`
+### 3. Role-Based Route Protection
+Saat ini sidebar menyembunyikan menu, tapi user bisa ketik URL langsung dan tetap masuk. Perlu:
+- Komponen `<ProtectedRoute roles={['admin']}>` yang wrap halaman
+- Redirect ke dashboard jika role tidak sesuai
+- Tambahkan di setiap route di `App.tsx`
 
-### 4. Search & Filter Role di Kelola Pengguna
-Tambah search input (filter by email & nama) dan dropdown filter role di atas tabel. Filter data secara client-side dari `users` array.
+### 4. Permission Granular per Menu (View/Edit/Delete)
+Definisi permission matrix di kode:
 
-**File**: `Users.tsx`
+```text
+Menu                  | admin | operator | supervisor | safety_manager
+──────────────────────|───────|──────────|────────────|───────────────
+Dashboard             | view  | view     | view       | view
+Kelola Pekerja        | full  | —        | —          | —
+Zona & Kamera         | full  | —        | —          | —
+Aturan APD            | full  | —        | —          | —
+Aturan Akses          | full  | —        | —          | —
+Kelola Pengguna       | full  | —        | —          | —
+Live Kamera           | full  | view     | —          | —
+Event Terkini         | full  | view     | —          | —
+Inbox Alert           | full  | edit     | —          | —
+Validasi Alert        | full  | —        | edit       | —
+Izin Keluar           | full  | —        | edit       | —
+Laporan Kepatuhan     | view  | —        | —          | view
+Rekap Pelanggaran     | view  | —        | —          | view
+Ekspor Laporan        | full  | —        | —          | edit
+```
 
-### 5. Hapus Kolom Status di Kelola Pengguna
-Hapus kolom "Status" (email_confirmed_at) dari tabel header dan body.
+### File yang Diubah/Dibuat
 
-**File**: `Users.tsx`
+1. **`supabase/functions/manage-users/index.ts`** — Edge function baru untuk admin user operations
+2. **`src/pages/Users.tsx`** — Halaman baru kelola pengguna
+3. **`src/components/layout/ProtectedRoute.tsx`** — Komponen route guard
+4. **`src/App.tsx`** — Tambah route `/users` + wrap semua route dengan ProtectedRoute
+5. **`src/components/layout/AppSidebar.tsx`** — Tambah menu "Kelola Pengguna"
+6. **`src/lib/permissions.ts`** — Permission matrix & helper `canAccess(role, page, action)`
+7. **Database migration** — Update RLS policy pada `profiles` agar admin bisa lihat semua profile
 
-### 6. Default Tanggal Hari Ini di Validasi Operator & Supervisor
-Ubah `dateFrom` default dari `subDays(new Date(), 30)` menjadi `format(new Date(), 'yyyy-MM-dd')` (hari ini saja).
-
-**Files**: `OperatorValidation.tsx`, `SupervisorValidation.tsx`
-
-### 7. Filter Jenis Pelanggaran di Validasi Operator & Supervisor
-Tambah dropdown filter "Jenis Pelanggaran" (Semua / APD Tidak Lengkap / Keluar Zona) di bar filter. Update `filtered` logic untuk match `cameras.jenis_pelanggaran`.
-
-**Files**: `OperatorValidation.tsx`, `SupervisorValidation.tsx`
-
-### Files Changed
-- `src/pages/OperatorValidation.tsx`
-- `src/pages/SupervisorValidation.tsx`
-- `src/pages/Workers.tsx`
-- `src/pages/Users.tsx`
-- `src/pages/Zones.tsx`
-- `src/pages/Simulate.tsx`
-- `src/pages/Index.tsx`
+### Alur Invite User
+1. Admin buka `/users` → klik "Invite User"
+2. Isi email + pilih role → panggil edge function `manage-users/invite`
+3. Edge function: `supabase.auth.admin.inviteUserByEmail()` + insert ke `user_roles`
+4. User terima email → klik link → set password → login dengan role yang sudah di-assign
 

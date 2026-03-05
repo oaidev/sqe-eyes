@@ -196,7 +196,7 @@ export default function Index() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Keluar Tanpa Izin — 7 Hari Terakhir</CardTitle>
+              <CardTitle className="text-base">Keluar Zona — 7 Hari Terakhir</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
