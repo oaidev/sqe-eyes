@@ -11,7 +11,8 @@ interface PersonBox {
   boundingBox: BoundingBox | null;
   workerName: string | null;
   hasViolation: boolean;
-  ppeStatus: string; // e.g. "Helm ✓, Sarung Tangan ✗"
+  ppeStatus: string;
+  personIndex: number;
 }
 
 interface BoundingBoxOverlayProps {
@@ -63,8 +64,7 @@ export function BoundingBoxOverlay({ imageSrc, persons }: BoundingBoxOverlayProp
       {/* HTML labels for better text rendering */}
       {boxes.map((person, i) => {
         const bb = person.boundingBox!;
-        const color = person.hasViolation ? 'bg-red-500' : 'bg-green-500';
-        const label = person.workerName || 'Tidak Dikenal';
+        const label = `#${person.personIndex} ${person.workerName || 'Tidak Dikenal'}`;
         return (
           <div
             key={i}
