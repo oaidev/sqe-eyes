@@ -13,6 +13,11 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
+
+interface BoundingBoxData {
+  Left: number; Top: number; Width: number; Height: number;
+}
 
 interface DetectionResult {
   id: string;
@@ -22,6 +27,7 @@ interface DetectionResult {
   alert_created: boolean;
   alert_type?: string;
   jenisPelanggaran: string;
+  boundingBox: BoundingBoxData | null;
 }
 
 const ppeLabel: Record<string, string> = {
