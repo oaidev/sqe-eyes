@@ -9,7 +9,7 @@ const corsHeaders = {
 // ─── Cosmos API helpers ─────────────────────────────────────────────────────
 
 async function cosmosLogin(apiUrl: string, username: string, password: string): Promise<string> {
-  const res = await fetch(`${apiUrl}/api/v1/login`, {
+  const res = await fetch(`${apiUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ username, password }),
