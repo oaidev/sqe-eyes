@@ -1,72 +1,103 @@
 
 
-## Plan: Replace AWS Rekognition PPE Detection with Custom API
+## Plan: Replace All AWS Rekognition with Cosmos API
 
 ### Context
 
-Currently, PPE detection uses 3 AWS Rekognition calls:
-1. **DetectProtectiveEquipment** — helmet, gloves, safety glasses (per person)
-2. **DetectLabels** — shoes, vest (global labels)
+Replace **all** AWS Rekognition calls (face detection, face search, PPE detection) with a single Cosmos API that handles everything in one call. The API requires a login step to get a JWT token, then an infer endpoint that returns person detections with face recognition and PPE analysis built-in.
 
-These will be replaced with a single call to a custom YOLO-based API that returns per-object bounding boxes with classes: helmet, safety_vest, gloves, shoes, safety_glasses.
+### API Response Analysis
 
-AWS Rekognition will **still be used** for face detection (`DetectFaces`) and face identification (`SearchFacesByImage`).
+The `/api/v1/infer` response contains detections where:
+- **`class: "person"`** entries have: `face_name`, `similarity`, `ppe_valid`, `ppe_missing`, `bbox`
+- **`class: "helmet"|"safety_vest"|etc`** entries have: `bbox`, `confidence` (individual PPE item boxes for visualization)
 
-### Class Mapping
+Key insight: the API already associates PPE to persons (`ppe_missing` is on the person detection), so we don't need the face-to-body overlap logic.
 
-| Custom API Class | Internal Key | Label |
-|---|---|---|
-| helmet | HEAD_COVER | Helm |
-| safety_vest | REFLECTIVE_VEST | Rompi Reflektif |
-| gloves | HAND_COVER | Sarung Tangan |
-| shoes | SAFETY_SHOES | Sepatu Safety |
-| safety_glasses | SAFETY_GLASSES | Kacamata Safety |
+### Mapping
 
-### Key Design Decision: Associating PPE with Persons
+| API `ppe_missing` value | Internal Key |
+|---|---|
+| `"gloves"` | `HAND_COVER` |
+| `"safety glasses"` | `SAFETY_GLASSES` |
+| `"shoes"` | `SAFETY_SHOES` |
+| `"vest"` | `REFLECTIVE_VEST` |
+| `"helmet"` (inferred if not in detections) | `HEAD_COVER` |
 
-The custom API returns individual PPE item bounding boxes (not grouped by person like Rekognition). We need to associate PPE items to persons detected by `DetectFaces`. Strategy:
-- For each detected PPE item bbox, check overlap with each person's face bbox (expanded to approximate body area)
-- If overlap exists, assign that PPE item to that person
-- If only 1 person detected, all PPE items are assigned to them
+| API `face_name` | Match to |
+|---|---|
+| Non-null string (e.g. "Carry") | `workers.nama` (case-insensitive lookup) |
+| `null` / absent | Unknown person |
 
-### Configuration
+### Bounding Box Conversion
 
-- Store the PPE API URL in `system_config` table with key `ppe_api_url` so it's easily changeable (no hardcoded ngrok URL)
-- The edge function reads this URL at runtime
+API returns `bbox: [x1, y1, x2, y2]` in **pixel coordinates**. Must normalize to `{Left, Top, Width, Height}` in 0-1 range using the image dimensions. Since the API returns a `frame` field (base64 image), we can decode dimensions from the input image or use a fixed known size.
+
+**Approach**: Send image dimensions alongside the request, or extract from the input image bytes. The edge function already has `imageBytes` — we'll parse JPEG/PNG header for width/height.
+
+### Credential Storage
+
+Store Cosmos API credentials in `system_config`:
+- `cosmos_api_url`: `"https://cosmos.squantumengine.com"`
+- `cosmos_api_username`: `"admin"`
+- `cosmos_api_password`: `"admin"`
+
+This keeps them configurable without redeployment. Alternatively, use secrets for password — but since user provided them directly and they're `admin/admin`, system_config is fine for now.
 
 ### Files Changed
 
-#### 1. Database migration — add `ppe_api_url` to `system_config`
-- Insert default row: key=`ppe_api_url`, value=`"https://1d3f-2404-8000-1012-8996-2ceb-c61d-d712-eaac.ngrok-free.app/api/v1/predict"`
+#### 1. Database — insert config rows
+Insert into `system_config`:
+- `cosmos_api_url` = `"https://cosmos.squantumengine.com"`
+- `cosmos_api_username` = `"admin"`
+- `cosmos_api_password` = `"admin"`
 
-#### 2. `supabase/functions/detect-event/index.ts`
-- **Remove**: `DetectProtectiveEquipment` call (step 3), `DetectLabels` call (step 3b), related constants (`SHOE_LABELS`, `VEST_LABELS`)
-- **Add**: `callPpeApi()` function that:
-  - Converts image bytes to form-data with `file` field
-  - POSTs to the custom API URL (fetched from `system_config`)
-  - Parses response: extracts class name, confidence, and bounding box per detection
-  - Maps class names → internal PPE keys
-- **Update merge logic** (step 4): Instead of merging PPE-per-person from Rekognition, iterate PPE detections and assign to nearest person by bbox proximity
-- Keep face detection (step 1) and face identification (step 2) unchanged
+#### 2. `supabase/functions/detect-event/index.ts` — Major rewrite
+- **Remove**: All AWS Signature V4 helpers, all Rekognition calls (DetectFaces, SearchFacesByImage, DetectProtectiveEquipment, DetectLabels), PPE_MAP, SHOE_LABELS, VEST_LABELS, bboxOverlap, uint8ToBase64
+- **Add**:
+  - `cosmosLogin(apiUrl, username, password)` → returns JWT token
+  - `cosmosInfer(apiUrl, token, imageBytes)` → calls `/api/v1/infer` with multipart form-data, returns detections array
+  - `getImageDimensions(bytes)` → parse JPEG/PNG header for width/height to normalize bboxes
+  - `mapPpeMissing(ppe_missing)` → converts API's missing list to our internal PPE results format
+- **New flow**:
+  1. Read cosmos config from `system_config`
+  2. Login to get token
+  3. Call infer with image
+  4. For each `class: "person"` detection:
+     - Normalize bbox to 0-1 range
+     - Look up `face_name` → match to `workers.nama` (case-insensitive) to get worker_id
+     - Build `ppe_results` from `ppe_missing`: all 5 PPE items marked detected=true except those in ppe_missing
+     - **But**: still apply zone PPE matrix rules (existing step 5-6 logic stays)
+  5. Rest of logic (zone rules, event/alert creation) stays the same
 
-#### 3. `supabase/functions/process-video/index.ts`
-- Same changes as detect-event: replace `DetectProtectiveEquipment` + `DetectLabels` in `processFrame()` with custom API call
-- Reuse the same mapping and person-association logic
+#### 3. `supabase/functions/enroll-worker/index.ts` — Discuss impact
+The Cosmos API uses `face_name` matching, not face_id from Rekognition IndexFaces. This means:
+- **Face enrollment to AWS is no longer needed for detection** — the Cosmos API handles recognition internally
+- However, the enrollment flow (upload photos → IndexFaces) may still be needed if Cosmos requires face registration
+- **For now**: keep enroll-worker as-is since it's a separate concern. The user said "face recognition matching antara di kelola pekerja untuk face_name" — meaning the `nama` field in workers table is what gets matched to `face_name` from the API
 
-#### 4. No frontend changes needed
-- The PPE key names (`HEAD_COVER`, `SAFETY_GLASSES`, etc.) and bounding box format remain identical, so `BoundingBoxOverlay`, `VideoEvidencePlayer`, `Simulate.tsx`, and validation pages work without modification
+#### 4. `BoundingBoxOverlay.tsx` — Minor update
+- Also render individual PPE item bounding boxes (helmet, vest detections) returned by the API, not just person boxes
+- This gives visual confirmation of what the model detected
 
-### API Response Assumption
+#### 5. `Simulate.tsx` — No changes needed
+- The frontend already sends `image_base64` and receives the same response structure
 
-Typical YOLO API response format (will adapt if different):
-```json
-{
-  "predictions": [
-    { "class": "helmet", "confidence": 0.95, "bbox": [x1, y1, x2, y2] },
-    { "class": "gloves", "confidence": 0.87, "bbox": [x1, y1, x2, y2] }
-  ]
-}
+### Technical Detail: Image Dimension Parsing
+
+To normalize pixel bboxes, we need image width/height. Simple approach:
+```typescript
+// Parse JPEG dimensions from SOF marker
+function getJpegDimensions(bytes: Uint8Array): {w: number, h: number} { ... }
+// Parse PNG dimensions from IHDR chunk
+function getPngDimensions(bytes: Uint8Array): {w: number, h: number} { ... }
 ```
 
-Bounding box coordinates from the API (pixel-based) will be normalized to 0-1 range to match existing format.
+Alternative: use a fixed assumption (e.g., if the API always returns based on the original image dimensions) or include dimensions from the frontend.
+
+### What Stays the Same
+- Zone PPE rules logic (step 5-6)
+- Event and alert creation
+- Frontend components (BoundingBoxOverlay, Simulate.tsx result rendering)
+- PPE labels and internal keys
 
