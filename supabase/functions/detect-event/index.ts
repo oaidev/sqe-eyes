@@ -236,8 +236,7 @@ Deno.serve(async (req) => {
     // Preload all workers for face_name matching
     const { data: allWorkers } = await supabase
       .from("workers")
-      .select("id, nama, sid, jabatan")
-      .eq("is_active", true);
+      .select("id, nama, sid, jabatan");
 
     const workersByName = new Map<string, { id: string; nama: string; sid: string; jabatan: string }>();
     for (const w of allWorkers || []) {
