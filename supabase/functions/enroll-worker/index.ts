@@ -11,15 +11,15 @@ const corsHeaders = {
 async function cosmosLogin(apiUrl: string, username: string, password: string): Promise<string> {
   const res = await fetch(`${apiUrl}/api/v1/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username, password }),
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ username, password }),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Cosmos login failed: ${res.status} ${text}`);
   }
   const data = await res.json();
-  return data.access_token;
+  return data.token;
 }
 
 async function getCosmosConfig(supabase: any) {
