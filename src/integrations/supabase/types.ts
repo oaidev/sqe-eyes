@@ -115,6 +115,8 @@ export type Database = {
           id: string
           ppe_results: Json | null
           snapshot_url: string | null
+          video_frame_detections: Json | null
+          video_url: string | null
           worker_id: string | null
         }
         Insert: {
@@ -126,6 +128,8 @@ export type Database = {
           id?: string
           ppe_results?: Json | null
           snapshot_url?: string | null
+          video_frame_detections?: Json | null
+          video_url?: string | null
           worker_id?: string | null
         }
         Update: {
@@ -137,6 +141,8 @@ export type Database = {
           id?: string
           ppe_results?: Json | null
           snapshot_url?: string | null
+          video_frame_detections?: Json | null
+          video_url?: string | null
           worker_id?: string | null
         }
         Relationships: [
@@ -343,6 +349,30 @@ export type Database = {
           },
         ]
       }
+      system_config: {
+        Row: {
+          created_at: string
+          description: string | null
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -536,7 +566,12 @@ export type Database = {
       }
     }
     Enums: {
-      alasan_type: "APD_TIDAK_LENGKAP" | "SUDAH_IZIN" | "LAINNYA"
+      alasan_type:
+        | "APD_TIDAK_LENGKAP"
+        | "SUDAH_IZIN"
+        | "LAINNYA"
+        | "APD_LENGKAP"
+        | "TIDAK_ADA_IZIN"
       alert_status: "BARU" | "DITERUSKAN" | "SELESAI"
       alert_type: "UNAUTHORIZED_EXIT" | "APD_VIOLATION" | "UNKNOWN_PERSON"
       app_role: "admin" | "operator" | "supervisor" | "safety_manager"
@@ -679,7 +714,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      alasan_type: ["APD_TIDAK_LENGKAP", "SUDAH_IZIN", "LAINNYA"],
+      alasan_type: [
+        "APD_TIDAK_LENGKAP",
+        "SUDAH_IZIN",
+        "LAINNYA",
+        "APD_LENGKAP",
+        "TIDAK_ADA_IZIN",
+      ],
       alert_status: ["BARU", "DITERUSKAN", "SELESAI"],
       alert_type: ["UNAUTHORIZED_EXIT", "APD_VIOLATION", "UNKNOWN_PERSON"],
       app_role: ["admin", "operator", "supervisor", "safety_manager"],
