@@ -345,6 +345,15 @@ Deno.serve(async (req) => {
 
         const requiredItems = [...new Set(applicableRules.map((r) => r.ppe_item))];
 
+        // Remove non-required PPE items so frontend only evaluates zone-relevant items
+        if (requiredItems.length > 0) {
+          for (const key of ALL_PPE_KEYS) {
+            if (!requiredItems.includes(key)) {
+              delete person.ppeResults[key];
+            }
+          }
+        }
+
         for (const item of requiredItems) {
           const result = person.ppeResults[item];
           if (!result) {
