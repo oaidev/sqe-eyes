@@ -284,7 +284,7 @@ Deno.serve(async (req) => {
       let confidenceScore: number | null = null;
 
       if (det.face_name) {
-        const matched = workersByName.get(det.face_name.toLowerCase());
+        const matched = findWorkerByFaceName(det.face_name);
         if (matched) {
           workerId = matched.id;
           workerInfo = { nama: matched.nama, sid: matched.sid, jabatan: matched.jabatan };
