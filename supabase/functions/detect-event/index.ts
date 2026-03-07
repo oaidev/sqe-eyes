@@ -238,9 +238,28 @@ Deno.serve(async (req) => {
       .from("workers")
       .select("id, nama, sid, jabatan");
 
+    const workersArray = allWorkers || [];
+    
+    // Build exact match map and array for partial matching
     const workersByName = new Map<string, { id: string; nama: string; sid: string; jabatan: string }>();
-    for (const w of allWorkers || []) {
+    for (const w of workersArray) {
       workersByName.set(w.nama.toLowerCase(), w);
+    }
+    
+    // Partial match function: try exact first, then startsWith, then includes
+    function findWorkerByFaceName(faceName: string) {
+      const lower = faceName.toLowerCase();
+      // Exact match
+      if (workersByName.has(lower)) return workersByName.get(lower)!;
+      // Partial match: worker name starts with face_name
+      for (const w of workersArray) {
+        if (w.nama.toLowerCase().startsWith(lower)) return w;
+      }
+      // Partial match: face_name is contained in worker name
+      for (const w of workersArray) {
+        if (w.nama.toLowerCase().includes(lower)) return w;
+      }
+      return null;
     }
 
     for (let pIdx = 0; pIdx < personDetections.length; pIdx++) {
@@ -265,7 +284,7 @@ Deno.serve(async (req) => {
       let confidenceScore: number | null = null;
 
       if (det.face_name) {
-        const matched = workersByName.get(det.face_name.toLowerCase());
+        const matched = findWorkerByFaceName(det.face_name);
         if (matched) {
           workerId = matched.id;
           workerInfo = { nama: matched.nama, sid: matched.sid, jabatan: matched.jabatan };
