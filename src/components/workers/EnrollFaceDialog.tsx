@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { Camera, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Camera, Loader2, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Worker = Tables<'workers'>;
@@ -25,6 +25,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
   const qc = useQueryClient();
   const [files, setFiles] = useState<File[]>([]);
   const [enrolling, setEnrolling] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<Array<{ photo_url: string; face_id: string | null; quality_score: number | null; error?: string }>>([]);
 
@@ -42,6 +43,25 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
     },
     enabled: !!worker && open,
   });
+
+  const callEdgeFunction = async (body: Record<string, unknown>) => {
+    const { data: session } = await supabase.auth.getSession();
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    const res = await fetch(
+      `https://${projectId}.supabase.co/functions/v1/enroll-worker`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.session?.access_token}`,
+        },
+        body: JSON.stringify(body),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  };
 
   const handleEnroll = async () => {
     if (!worker || files.length === 0) return;
@@ -70,26 +90,13 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
 
       setProgress(55);
 
-      // Call enroll-worker edge function
-      const { data: session } = await supabase.auth.getSession();
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/enroll-worker`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.session?.access_token}`,
-          },
-          body: JSON.stringify({ worker_id: worker.id, photo_urls: photoUrls }),
-        }
-      );
+      const data = await callEdgeFunction({
+        action: 'enroll',
+        worker_id: worker.id,
+        photo_urls: photoUrls,
+      });
 
       setProgress(90);
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || 'Enrollment failed');
-
       setResults(data.results || []);
       setProgress(100);
       toast({ title: 'Enrollment selesai', description: `${data.results?.filter((r: any) => r.face_id).length} wajah berhasil didaftarkan` });
@@ -99,6 +106,25 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
       toast({ title: 'Error enrollment', description: e.message, variant: 'destructive' });
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const handleDelete = async (emb: FaceEmbedding) => {
+    if (!worker || !emb.face_id) return;
+    setDeleting(emb.id);
+    try {
+      await callEdgeFunction({
+        action: 'delete',
+        worker_id: worker.id,
+        cosmos_face_id: emb.face_id,
+      });
+      toast({ title: 'Wajah dihapus', description: `Face ID ${emb.face_id} berhasil dihapus dari Cosmos` });
+      qc.invalidateQueries({ queryKey: ['workers'] });
+      qc.invalidateQueries({ queryKey: ['face-embeddings', worker.id] });
+    } catch (e: any) {
+      toast({ title: 'Error hapus wajah', description: e.message, variant: 'destructive' });
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -120,7 +146,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
             Daftarkan Wajah — {worker?.nama}
           </DialogTitle>
           <DialogDescription>
-            Upload 1–3 foto wajah pekerja untuk didaftarkan ke sistem pengenalan wajah.
+            Upload 1–3 foto wajah pekerja untuk didaftarkan ke sistem pengenalan wajah Cosmos.
           </DialogDescription>
         </DialogHeader>
 
@@ -131,8 +157,23 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
             <div className="space-y-1">
               {embeddings.map((emb) => (
                 <div key={emb.id} className="flex items-center justify-between rounded border p-2 text-xs">
-                  <span className="font-mono truncate max-w-[200px]">{emb.face_id || 'N/A'}</span>
-                  <Badge variant="outline">{emb.quality_score ? `${emb.quality_score.toFixed(1)}%` : '-'}</Badge>
+                  <span className="font-mono truncate max-w-[180px]">ID: {emb.face_id || 'N/A'}</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{emb.quality_score ? `${emb.quality_score.toFixed(1)}%` : '-'}</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={deleting === emb.id || !emb.face_id}
+                      onClick={() => handleDelete(emb)}
+                    >
+                      {deleting === emb.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -157,7 +198,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
           <div className="space-y-2">
             <Progress value={progress} className="h-2" />
             <p className="text-xs text-muted-foreground text-center">
-              {progress < 50 ? 'Mengupload foto...' : progress < 90 ? 'Memproses pendaftaran wajah...' : 'Selesai!'}
+              {progress < 50 ? 'Mengupload foto...' : progress < 90 ? 'Mendaftarkan wajah ke Cosmos...' : 'Selesai!'}
             </p>
           </div>
         )}
@@ -168,7 +209,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
             {results.map((r, i) => (
               <div key={i} className="flex items-center gap-2 text-sm">
                 {r.face_id ? <CheckCircle className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-destructive" />}
-                <span>{r.face_id ? `Terdaftar (score: ${r.quality_score?.toFixed(1)}%)` : r.error || 'Gagal'}</span>
+                <span>{r.face_id ? `Terdaftar (ID: ${r.face_id})` : r.error || 'Gagal'}</span>
               </div>
             ))}
           </div>

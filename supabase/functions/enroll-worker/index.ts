@@ -6,78 +6,39 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── AWS Signature V4 helpers ───────────────────────────────────────────────
+// ─── Cosmos API helpers ─────────────────────────────────────────────────────
 
-function toHex(buf: ArrayBuffer): string {
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256(data: string | Uint8Array): Promise<string> {
-  const encoded = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return toHex(await crypto.subtle.digest("SHA-256", encoded));
-}
-
-async function hmacSha256(key: ArrayBuffer | Uint8Array, msg: string): Promise<ArrayBuffer> {
-  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg));
-}
-
-async function getSignatureKey(secret: string, date: string, region: string, service: string) {
-  let k: ArrayBuffer = await hmacSha256(new TextEncoder().encode("AWS4" + secret), date);
-  k = await hmacSha256(k, region);
-  k = await hmacSha256(k, service);
-  k = await hmacSha256(k, "aws4_request");
-  return k;
-}
-
-async function signRequest(
-  method: string,
-  url: string,
-  body: string,
-  region: string,
-  accessKey: string,
-  secretKey: string,
-  service: string,
-  target: string
-) {
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const dateStamp = amzDate.slice(0, 8);
-  const u = new URL(url);
-
-  const headers: Record<string, string> = {
-    "content-type": "application/x-amz-json-1.1",
-    host: u.host,
-    "x-amz-date": amzDate,
-    "x-amz-target": target,
-  };
-
-  const signedHeaderKeys = Object.keys(headers).sort();
-  const signedHeaders = signedHeaderKeys.join(";");
-  const canonicalHeaders = signedHeaderKeys.map((k) => `${k}:${headers[k]}\n`).join("");
-  const payloadHash = await sha256(body);
-
-  const canonicalRequest = [method, u.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
-
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, await sha256(canonicalRequest)].join("\n");
-
-  const signingKey = await getSignatureKey(secretKey, dateStamp, region, service);
-  const signature = toHex(await hmacSha256(signingKey, stringToSign));
-
-  headers["Authorization"] = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  return headers;
-}
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-    binary += String.fromCharCode(...slice);
+async function cosmosLogin(apiUrl: string, username: string, password: string): Promise<string> {
+  const res = await fetch(`${apiUrl}/api/v1/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Cosmos login failed: ${res.status} ${text}`);
   }
-  return btoa(binary);
+  const data = await res.json();
+  return data.access_token;
+}
+
+async function getCosmosConfig(supabase: any) {
+  const keys = ["cosmos_api_url", "cosmos_api_username", "cosmos_api_password"];
+  const { data, error } = await supabase
+    .from("system_config")
+    .select("key, value")
+    .in("key", keys);
+  if (error) throw new Error(`Failed to read system_config: ${error.message}`);
+  const config: Record<string, string> = {};
+  for (const row of data || []) {
+    config[row.key] = typeof row.value === "string" ? row.value : JSON.parse(JSON.stringify(row.value)).replace(/^"|"$/g, "");
+  }
+  if (!config.cosmos_api_url) throw new Error("cosmos_api_url not configured");
+  return {
+    apiUrl: config.cosmos_api_url.replace(/\/+$/, ""),
+    username: config.cosmos_api_username || "admin",
+    password: config.cosmos_api_password || "admin",
+  };
 }
 
 // ─── Main handler ───────────────────────────────────────────────────────────
@@ -111,27 +72,83 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { worker_id, photo_urls } = await req.json();
+    const body = await req.json();
+    const { action = "enroll", worker_id, photo_urls, cosmos_face_id } = body;
+
+    // Get Cosmos config
+    const cosmosConfig = await getCosmosConfig(supabase);
+    const cosmosToken = await cosmosLogin(cosmosConfig.apiUrl, cosmosConfig.username, cosmosConfig.password);
+
+    // ─── ACTION: list ───────────────────────────────────────────────────
+    if (action === "list") {
+      const res = await fetch(`${cosmosConfig.apiUrl}/api/v1/faces`, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${cosmosToken}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to list faces");
+      return new Response(JSON.stringify({ success: true, faces: data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── ACTION: delete ─────────────────────────────────────────────────
+    if (action === "delete") {
+      if (!cosmos_face_id) {
+        return new Response(JSON.stringify({ error: "cosmos_face_id required" }), { status: 400, headers: corsHeaders });
+      }
+      const res = await fetch(`${cosmosConfig.apiUrl}/api/v1/faces/${cosmos_face_id}`, {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${cosmosToken}`,
+        },
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(`Delete failed: ${text}`);
+
+      // Remove from DB
+      if (worker_id) {
+        await supabase
+          .from("worker_face_embeddings")
+          .delete()
+          .eq("worker_id", worker_id)
+          .eq("face_id", String(cosmos_face_id));
+
+        // Check remaining embeddings
+        const { data: remaining } = await supabase
+          .from("worker_face_embeddings")
+          .select("id")
+          .eq("worker_id", worker_id);
+        if (!remaining || remaining.length === 0) {
+          await supabase.from("workers").update({ enrollment_status: "NOT_ENROLLED" }).eq("id", worker_id);
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── ACTION: enroll (default) ───────────────────────────────────────
     if (!worker_id || !photo_urls?.length) {
       return new Response(JSON.stringify({ error: "worker_id and photo_urls required" }), { status: 400, headers: corsHeaders });
     }
 
-    const region = Deno.env.get("AWS_REGION") || "ap-southeast-1";
-    const accessKey = Deno.env.get("AWS_ACCESS_KEY_ID")!;
-    const secretKey = Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
-    const collectionId = "sqe-eyes-workers";
-    const endpoint = `https://rekognition.${region}.amazonaws.com`;
+    // Get worker info
+    const { data: worker, error: workerErr } = await supabase
+      .from("workers")
+      .select("nama, sid")
+      .eq("id", worker_id)
+      .single();
+    if (workerErr || !worker) {
+      return new Response(JSON.stringify({ error: "Worker not found" }), { status: 404, headers: corsHeaders });
+    }
 
     // Update status to ENROLLING
     await supabase.from("workers").update({ enrollment_status: "ENROLLING" }).eq("id", worker_id);
-
-    // Ensure collection exists (ignore AlreadyExists error)
-    try {
-      const createBody = JSON.stringify({ CollectionId: collectionId });
-      const createHeaders = await signRequest("POST", endpoint, createBody, region, accessKey, secretKey, "rekognition", "RekognitionService.CreateCollection");
-      const createRes = await fetch(endpoint, { method: "POST", headers: createHeaders, body: createBody });
-      await createRes.text(); // consume
-    } catch (_) { /* collection may already exist */ }
 
     const results: Array<{ photo_url: string; face_id: string | null; quality_score: number | null; error?: string }> = [];
 
@@ -139,37 +156,41 @@ Deno.serve(async (req) => {
       try {
         // Fetch the image bytes
         const imgRes = await fetch(photoUrl);
-        const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
+        const imgBlob = await imgRes.blob();
 
-        // Call IndexFaces
-        const indexBody = JSON.stringify({
-          CollectionId: collectionId,
-          Image: { Bytes: uint8ToBase64(imgBytes) },
-          ExternalImageId: worker_id,
-          MaxFaces: 1,
-          QualityFilter: "AUTO",
+        // Build multipart form data for Cosmos
+        const formData = new FormData();
+        formData.append("name", worker.nama);
+        formData.append("employee_id", worker.sid);
+        formData.append("photo", imgBlob, "photo.jpg");
+
+        const faceRes = await fetch(`${cosmosConfig.apiUrl}/api/v1/faces`, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${cosmosToken}`,
+          },
+          body: formData,
         });
-        const indexHeaders = await signRequest("POST", endpoint, indexBody, region, accessKey, secretKey, "rekognition", "RekognitionService.IndexFaces");
-        const indexRes = await fetch(endpoint, { method: "POST", headers: indexHeaders, body: indexBody });
-        const indexData = await indexRes.json();
 
-        if (indexData.FaceRecords?.length > 0) {
-          const face = indexData.FaceRecords[0];
-          const faceId = face.Face.FaceId;
-          const qualityScore = face.FaceDetail?.Confidence || null;
+        const faceData = await faceRes.json();
 
-          // Store embedding
-          await supabase.from("worker_face_embeddings").insert({
-            worker_id,
-            photo_url: photoUrl,
-            face_id: faceId,
-            quality_score: qualityScore,
-          });
-
-          results.push({ photo_url: photoUrl, face_id: faceId, quality_score: qualityScore });
-        } else {
-          results.push({ photo_url: photoUrl, face_id: null, quality_score: null, error: "No face detected" });
+        if (!faceRes.ok) {
+          throw new Error(faceData.detail || faceData.message || JSON.stringify(faceData));
         }
+
+        const faceId = String(faceData.id || faceData.face_id || "");
+        const qualityScore = faceData.confidence || faceData.quality_score || null;
+
+        // Store in DB
+        await supabase.from("worker_face_embeddings").insert({
+          worker_id,
+          photo_url: photoUrl,
+          face_id: faceId,
+          quality_score: qualityScore,
+        });
+
+        results.push({ photo_url: photoUrl, face_id: faceId, quality_score: qualityScore });
       } catch (e) {
         results.push({ photo_url: photoUrl, face_id: null, quality_score: null, error: e.message });
       }
