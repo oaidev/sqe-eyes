@@ -107,7 +107,10 @@ Deno.serve(async (req) => {
         },
       });
       const text = await res.text();
-      if (!res.ok) throw new Error(`Delete failed: ${text}`);
+      // If face not found in Cosmos, still proceed to clean up DB
+      if (!res.ok && !text.includes("not found")) {
+        throw new Error(`Delete failed: ${text}`);
+      }
 
       // Remove from DB
       if (worker_id) {
