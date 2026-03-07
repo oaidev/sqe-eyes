@@ -6,89 +6,90 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── AWS Signature V4 helpers ───────────────────────────────────────────────
+// ─── Cosmos API helpers ─────────────────────────────────────────────────────
 
-function toHex(buf: ArrayBuffer): string {
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256(data: string | Uint8Array): Promise<string> {
-  const encoded = typeof data === "string" ? new TextEncoder().encode(data) : data;
-  return toHex(await crypto.subtle.digest("SHA-256", encoded));
-}
-
-async function hmacSha256(key: ArrayBuffer | Uint8Array, msg: string): Promise<ArrayBuffer> {
-  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return crypto.subtle.sign("HMAC", k, new TextEncoder().encode(msg));
-}
-
-async function getSignatureKey(secret: string, date: string, region: string, service: string) {
-  let k: ArrayBuffer = await hmacSha256(new TextEncoder().encode("AWS4" + secret), date);
-  k = await hmacSha256(k, region);
-  k = await hmacSha256(k, service);
-  k = await hmacSha256(k, "aws4_request");
-  return k;
-}
-
-async function signRequest(
-  method: string,
-  url: string,
-  body: string,
-  region: string,
-  accessKey: string,
-  secretKey: string,
-  service: string,
-  target: string
-) {
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const dateStamp = amzDate.slice(0, 8);
-  const u = new URL(url);
-
-  const headers: Record<string, string> = {
-    "content-type": "application/x-amz-json-1.1",
-    host: u.host,
-    "x-amz-date": amzDate,
-    "x-amz-target": target,
-  };
-
-  const signedHeaderKeys = Object.keys(headers).sort();
-  const signedHeaders = signedHeaderKeys.join(";");
-  const canonicalHeaders = signedHeaderKeys.map((k) => `${k}:${headers[k]}\n`).join("");
-  const payloadHash = await sha256(body);
-
-  const canonicalRequest = [method, u.pathname, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
-
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, await sha256(canonicalRequest)].join("\n");
-
-  const signingKey = await getSignatureKey(secretKey, dateStamp, region, service);
-  const signature = toHex(await hmacSha256(signingKey, stringToSign));
-
-  headers["Authorization"] = `AWS4-HMAC-SHA256 Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  return headers;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 8192;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-    binary += String.fromCharCode(...slice);
+async function cosmosLogin(apiUrl: string, username: string, password: string): Promise<string> {
+  const res = await fetch(`${apiUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Cosmos login failed (${res.status}): ${text}`);
   }
-  return btoa(binary);
+  const data = await res.json();
+  return data.token;
 }
 
-// AWS Rekognition PPE API supports FACE_COVER, HEAD_COVER, HAND_COVER
-// We remap FACE_COVER → SAFETY_GLASSES (kacamata/goggle detection)
-const PPE_MAP: Record<string, string> = {
-  FACE_COVER: "SAFETY_GLASSES",
-  HEAD_COVER: "HEAD_COVER",
-  HAND_COVER: "HAND_COVER",
+async function cosmosInfer(apiUrl: string, token: string, imageBytes: Uint8Array, filename = "image.jpg"): Promise<any> {
+  const formData = new FormData();
+  const blob = new Blob([imageBytes], { type: "image/jpeg" });
+  formData.append("image", blob, filename);
+
+  const res = await fetch(`${apiUrl}/api/v1/infer`, {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Cosmos infer failed (${res.status}): ${text}`);
+  }
+  return await res.json();
+}
+
+// ─── Image dimension parsing ────────────────────────────────────────────────
+
+function getImageDimensions(bytes: Uint8Array): { w: number; h: number } {
+  // Try JPEG
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+    let i = 2;
+    while (i < bytes.length - 1) {
+      if (bytes[i] !== 0xFF) break;
+      const marker = bytes[i + 1];
+      // SOF markers: C0-C3, C5-C7, C9-CB, CD-CF
+      if (
+        (marker >= 0xC0 && marker <= 0xC3) ||
+        (marker >= 0xC5 && marker <= 0xC7) ||
+        (marker >= 0xC9 && marker <= 0xCB) ||
+        (marker >= 0xCD && marker <= 0xCF)
+      ) {
+        const h = (bytes[i + 5] << 8) | bytes[i + 6];
+        const w = (bytes[i + 7] << 8) | bytes[i + 8];
+        if (w > 0 && h > 0) return { w, h };
+      }
+      const len = (bytes[i + 2] << 8) | bytes[i + 3];
+      i += 2 + len;
+    }
+  }
+
+  // Try PNG
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+    const w = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+    const h = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+    if (w > 0 && h > 0) return { w, h };
+  }
+
+  // Fallback
+  console.warn("Could not parse image dimensions, using 1280x720 fallback");
+  return { w: 1280, h: 720 };
+}
+
+// ─── PPE mapping ────────────────────────────────────────────────────────────
+
+const PPE_MISSING_MAP: Record<string, string> = {
+  "gloves": "HAND_COVER",
+  "safety glasses": "SAFETY_GLASSES",
+  "shoes": "SAFETY_SHOES",
+  "vest": "REFLECTIVE_VEST",
+  "helmet": "HEAD_COVER",
 };
+
+const ALL_PPE_KEYS = ["HEAD_COVER", "HAND_COVER", "SAFETY_GLASSES", "SAFETY_SHOES", "REFLECTIVE_VEST"];
 
 const PPE_LABEL: Record<string, string> = {
   HEAD_COVER: "Helm",
@@ -98,24 +99,16 @@ const PPE_LABEL: Record<string, string> = {
   REFLECTIVE_VEST: "Rompi Reflektif",
 };
 
-// Labels from DetectLabels API that map to our PPE items
-const SHOE_LABELS = ["boot", "shoe", "footwear", "safety shoe", "work boot", "steel-toe", "steel toe", "protective footwear", "cowboy boot", "hiking boot", "sneaker", "rubber boot", "clothing", "apparel"];
-const VEST_LABELS = ["vest", "high-vis", "high visibility", "reflective vest", "safety vest", "life jacket", "jacket", "workwear", "uniform", "overall", "coverall", "outerwear", "fluorescent"];
-
-// Bounding box overlap helper — checks if two bounding boxes overlap significantly
-function bboxOverlap(
-  a: { Left: number; Top: number; Width: number; Height: number },
-  b: { Left: number; Top: number; Width: number; Height: number }
-): number {
-  const x1 = Math.max(a.Left, b.Left);
-  const y1 = Math.max(a.Top, b.Top);
-  const x2 = Math.min(a.Left + a.Width, b.Left + b.Width);
-  const y2 = Math.min(a.Top + a.Height, b.Top + b.Height);
-  if (x2 <= x1 || y2 <= y1) return 0;
-  const intersection = (x2 - x1) * (y2 - y1);
-  const areaA = a.Width * a.Height;
-  const areaB = b.Width * b.Height;
-  return intersection / Math.min(areaA, areaB);
+function buildPpeResults(ppeMissing: string[] | undefined): Record<string, { detected: boolean; confidence: number }> {
+  const missing = (ppeMissing || []).map(m => PPE_MISSING_MAP[m.toLowerCase()] || m);
+  const results: Record<string, { detected: boolean; confidence: number }> = {};
+  for (const key of ALL_PPE_KEYS) {
+    results[key] = {
+      detected: !missing.includes(key),
+      confidence: missing.includes(key) ? 0 : 90,
+    };
+  }
+  return results;
 }
 
 // ─── Main handler ───────────────────────────────────────────────────────────
@@ -138,12 +131,6 @@ Deno.serve(async (req) => {
         status: 400, headers: corsHeaders,
       });
     }
-
-    const region = Deno.env.get("AWS_REGION") || "ap-southeast-1";
-    const accessKey = Deno.env.get("AWS_ACCESS_KEY_ID")!;
-    const secretKey = Deno.env.get("AWS_SECRET_ACCESS_KEY")!;
-    const collectionId = "sqe-eyes-workers";
-    const endpoint = `https://rekognition.${region}.amazonaws.com`;
 
     // Get camera info if camera_id provided
     let cameraInfo: { zone_id: string; point_type: string; jenis_pelanggaran: string } | null = null;
@@ -173,8 +160,6 @@ Deno.serve(async (req) => {
       imageBytes = new Uint8Array(await imgRes.arrayBuffer());
     }
 
-    const imageB64 = uint8ToBase64(imageBytes);
-
     // Upload image to storage for evidence
     let snapshotUrl: string | null = image_url || null;
     if (image_base64) {
@@ -198,226 +183,44 @@ Deno.serve(async (req) => {
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 1. DetectFaces — get all face bounding boxes
+    // 1. Get Cosmos API config from system_config
     // ──────────────────────────────────────────────────────────────────────
-    interface FaceInfo {
-      boundingBox: { Left: number; Top: number; Width: number; Height: number };
-      workerId: string | null;
-      workerInfo: { nama: string; sid: string; jabatan: string } | null;
-      confidenceScore: number | null;
+    const { data: configRows } = await supabase
+      .from("system_config")
+      .select("key, value")
+      .in("key", ["cosmos_api_url", "cosmos_api_username", "cosmos_api_password"]);
+
+    const configMap: Record<string, string> = {};
+    for (const row of configRows || []) {
+      configMap[row.key] = typeof row.value === "string" ? row.value : JSON.stringify(row.value).replace(/^"|"$/g, "");
     }
 
-    const faces: FaceInfo[] = [];
+    const cosmosUrl = configMap["cosmos_api_url"] || "https://cosmos.squantumengine.com";
+    const cosmosUser = configMap["cosmos_api_username"] || "admin";
+    const cosmosPass = configMap["cosmos_api_password"] || "admin";
 
-    try {
-      const detectFacesBody = JSON.stringify({
-        Image: { Bytes: imageB64 },
-        Attributes: ["DEFAULT"],
-      });
-      const detectFacesHeaders = await signRequest("POST", endpoint, detectFacesBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectFaces");
-      const detectFacesRes = await fetch(endpoint, { method: "POST", headers: detectFacesHeaders, body: detectFacesBody });
-      const detectFacesData = await detectFacesRes.json();
-
-      console.log(`DetectFaces found ${detectFacesData.FaceDetails?.length || 0} faces`);
-
-      if (detectFacesData.FaceDetails?.length > 0) {
-        for (const face of detectFacesData.FaceDetails) {
-          faces.push({
-            boundingBox: face.BoundingBox,
-            workerId: null,
-            workerInfo: null,
-            confidenceScore: null,
-          });
-        }
-      }
-    } catch (err) {
-      console.error("DetectFaces failed:", err);
-    }
+    console.log(`Using Cosmos API: ${cosmosUrl}`);
 
     // ──────────────────────────────────────────────────────────────────────
-    // 2. SearchFacesByImage — identify the largest face (AWS limitation)
-    //    Then match to detected faces via bounding box overlap
+    // 2. Login to Cosmos API
     // ──────────────────────────────────────────────────────────────────────
-    try {
-      const searchBody = JSON.stringify({
-        CollectionId: collectionId,
-        Image: { Bytes: imageB64 },
-        MaxFaces: 1,
-        FaceMatchThreshold: 80,
-      });
-      const searchHeaders = await signRequest("POST", endpoint, searchBody, region, accessKey, secretKey, "rekognition", "RekognitionService.SearchFacesByImage");
-      const searchRes = await fetch(endpoint, { method: "POST", headers: searchHeaders, body: searchBody });
-      const searchData = await searchRes.json();
-
-      if (searchData.FaceMatches?.length > 0) {
-        const match = searchData.FaceMatches[0];
-        const confidence = match.Similarity / 100;
-        const faceId = match.Face.FaceId;
-        const searchedBBox = searchData.SearchedFaceBoundingBox;
-
-        // Look up worker from face_id
-        const { data: embedding } = await supabase
-          .from("worker_face_embeddings")
-          .select("worker_id")
-          .eq("face_id", faceId)
-          .limit(1)
-          .single();
-
-        if (embedding) {
-          const { data: w } = await supabase
-            .from("workers")
-            .select("nama, sid, jabatan")
-            .eq("id", embedding.worker_id)
-            .single();
-
-          // Match to closest detected face by bounding box overlap
-          if (searchedBBox && faces.length > 0) {
-            let bestIdx = 0;
-            let bestOverlap = 0;
-            for (let i = 0; i < faces.length; i++) {
-              const overlap = bboxOverlap(searchedBBox, faces[i].boundingBox);
-              if (overlap > bestOverlap) {
-                bestOverlap = overlap;
-                bestIdx = i;
-              }
-            }
-            faces[bestIdx].workerId = embedding.worker_id;
-            faces[bestIdx].workerInfo = w || null;
-            faces[bestIdx].confidenceScore = confidence;
-          } else if (faces.length > 0) {
-            // Fallback: assign to first face
-            faces[0].workerId = embedding.worker_id;
-            faces[0].workerInfo = w || null;
-            faces[0].confidenceScore = confidence;
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Face search failed:", err);
-    }
-
-    // If no faces detected at all, create a single "unknown" entry
-    if (faces.length === 0) {
-      faces.push({
-        boundingBox: { Left: 0, Top: 0, Width: 1, Height: 1 },
-        workerId: null,
-        workerInfo: null,
-        confidenceScore: null,
-      });
-    }
+    const cosmosToken = await cosmosLogin(cosmosUrl, cosmosUser, cosmosPass);
+    console.log("Cosmos login successful");
 
     // ──────────────────────────────────────────────────────────────────────
-    // 3. DetectProtectiveEquipment — get PPE per person
+    // 3. Call Cosmos Infer
     // ──────────────────────────────────────────────────────────────────────
-    interface PersonPPE {
-      personIdx: number;
-      boundingBox: { Left: number; Top: number; Width: number; Height: number } | null;
-      ppeResults: Record<string, { detected: boolean; confidence: number }>;
-    }
+    const inferResult = await cosmosInfer(cosmosUrl, cosmosToken, imageBytes);
+    const detections = inferResult.detections || [];
+    console.log(`Cosmos infer returned ${detections.length} detections`);
 
-    const personsPPE: PersonPPE[] = [];
-
-    try {
-      const ppeBody = JSON.stringify({
-        Image: { Bytes: imageB64 },
-        SummarizationAttributes: {
-          MinConfidence: 50,
-          RequiredEquipmentTypes: ["FACE_COVER", "HEAD_COVER", "HAND_COVER"],
-        },
-      });
-      const ppeHeaders = await signRequest("POST", endpoint, ppeBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectProtectiveEquipment");
-      const ppeRes = await fetch(endpoint, { method: "POST", headers: ppeHeaders, body: ppeBody });
-      const ppeData = await ppeRes.json();
-
-      console.log(`PPE detection found ${ppeData.Persons?.length || 0} persons`);
-      console.log("PPE raw response:", JSON.stringify(ppeData).slice(0, 500));
-
-      if (ppeData.Persons?.length > 0) {
-        for (let pIdx = 0; pIdx < ppeData.Persons.length; pIdx++) {
-          const person = ppeData.Persons[pIdx];
-          const ppeResults: Record<string, { detected: boolean; confidence: number }> = {};
-
-          for (const bp of person.BodyParts || []) {
-            const eqSummary = bp.EquipmentDetections?.map((e: any) => ({ type: e.Type, conf: e.Confidence, covers: e.CoversBodyPart }));
-            console.log(`  Person ${pIdx} body part: ${bp.Name}, confidence: ${bp.Confidence?.toFixed(1)}%, equipment: ${JSON.stringify(eqSummary)}`);
-            
-            // Log when body part is clearly visible but no equipment found
-            if (bp.Confidence > 90 && (!bp.EquipmentDetections || bp.EquipmentDetections.length === 0)) {
-              console.log(`  ⚠️ Person ${pIdx}: ${bp.Name} visible (${bp.Confidence?.toFixed(1)}%) but NO equipment detected — item likely NOT WORN`);
-            }
-            
-            for (const eq of bp.EquipmentDetections || []) {
-              const type = eq.Type;
-              if (type && PPE_MAP[type]) {
-                // Mark as detected if equipment confidence >= 50%, regardless of CoversBodyPart.Value
-                const eqConfidence = eq.Confidence ?? 0;
-                const coversValue = eq.CoversBodyPart?.Value ?? false;
-                const detected = eqConfidence >= 50 || coversValue;
-                ppeResults[PPE_MAP[type]] = {
-                  detected,
-                  confidence: eqConfidence,
-                };
-              }
-            }
-          }
-
-          personsPPE.push({
-            personIdx: pIdx,
-            boundingBox: person.BoundingBox || null,
-            ppeResults,
-          });
-        }
-      }
-    } catch (err) {
-      console.error("PPE detection failed:", err);
-    }
+    // Get image dimensions for bbox normalization
+    const { w: imgW, h: imgH } = getImageDimensions(imageBytes);
+    console.log(`Image dimensions: ${imgW}x${imgH}`);
 
     // ──────────────────────────────────────────────────────────────────────
-    // 3b. DetectLabels for SAFETY_SHOES and REFLECTIVE_VEST (global)
+    // 4. Process person detections
     // ──────────────────────────────────────────────────────────────────────
-    let globalShoeDetected = false;
-    let globalShoeConfidence = 0;
-    let globalVestDetected = false;
-    let globalVestConfidence = 0;
-
-    try {
-      const labelsBody = JSON.stringify({
-        Image: { Bytes: imageB64 },
-        MaxLabels: 50,
-        MinConfidence: 30,
-      });
-      const labelsHeaders = await signRequest("POST", endpoint, labelsBody, region, accessKey, secretKey, "rekognition", "RekognitionService.DetectLabels");
-      const labelsRes = await fetch(endpoint, { method: "POST", headers: labelsHeaders, body: labelsBody });
-      const labelsData = await labelsRes.json();
-
-      console.log("DetectLabels response:", JSON.stringify(labelsData).slice(0, 500));
-
-      const detectedLabels = (labelsData.Labels || []).map((l: any) => ({
-        name: l.Name?.toLowerCase() || "",
-        confidence: l.Confidence || 0,
-      }));
-
-      const shoeLabel = detectedLabels.find((l: any) => SHOE_LABELS.some(s => l.name.includes(s)));
-      if (shoeLabel) {
-        globalShoeDetected = true;
-        globalShoeConfidence = shoeLabel.confidence;
-      }
-
-      const vestLabel = detectedLabels.find((l: any) => VEST_LABELS.some(v => l.name.includes(v)));
-      if (vestLabel) {
-        globalVestDetected = true;
-        globalVestConfidence = vestLabel.confidence;
-      }
-    } catch (err) {
-      console.error("DetectLabels failed:", err);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // 4. Merge faces + PPE persons → build per-person results
-    // ──────────────────────────────────────────────────────────────────────
-
-    // Match PPE persons to detected faces by bounding box overlap
-    // Each face gets the PPE results of its best-matching PPE person
     interface PersonResult {
       workerId: string | null;
       workerInfo: { nama: string; sid: string; jabatan: string } | null;
@@ -427,65 +230,75 @@ Deno.serve(async (req) => {
       boundingBox: { Left: number; Top: number; Width: number; Height: number } | null;
     }
 
+    const personDetections = detections.filter((d: any) => d.class === "person");
     const results: PersonResult[] = [];
 
-    if (personsPPE.length > 0) {
-      // Use PPE persons as the primary list (they represent detected people)
-      const usedFaces = new Set<number>();
+    // Preload all workers for face_name matching
+    const { data: allWorkers } = await supabase
+      .from("workers")
+      .select("id, nama, sid, jabatan")
+      .eq("is_active", true);
 
-      for (const ppePerson of personsPPE) {
-        let bestFaceIdx = -1;
-        let bestOverlap = 0;
+    const workersByName = new Map<string, { id: string; nama: string; sid: string; jabatan: string }>();
+    for (const w of allWorkers || []) {
+      workersByName.set(w.nama.toLowerCase(), w);
+    }
 
-        // Match PPE person to a face
-        if (ppePerson.boundingBox) {
-          for (let fi = 0; fi < faces.length; fi++) {
-            if (usedFaces.has(fi)) continue;
-            const overlap = bboxOverlap(ppePerson.boundingBox, faces[fi].boundingBox);
-            if (overlap > bestOverlap) {
-              bestOverlap = overlap;
-              bestFaceIdx = fi;
-            }
-          }
+    for (let pIdx = 0; pIdx < personDetections.length; pIdx++) {
+      const det = personDetections[pIdx];
+      const bbox = det.bbox; // [x1, y1, x2, y2] in pixels
+
+      // Normalize bbox to 0-1 range
+      const x1 = Math.max(0, bbox[0]) / imgW;
+      const y1 = Math.max(0, bbox[1]) / imgH;
+      const x2 = Math.min(imgW, bbox[2]) / imgW;
+      const y2 = Math.min(imgH, bbox[3]) / imgH;
+      const normBox = {
+        Left: x1,
+        Top: y1,
+        Width: x2 - x1,
+        Height: y2 - y1,
+      };
+
+      // Match face_name to worker
+      let workerId: string | null = null;
+      let workerInfo: { nama: string; sid: string; jabatan: string } | null = null;
+      let confidenceScore: number | null = null;
+
+      if (det.face_name) {
+        const matched = workersByName.get(det.face_name.toLowerCase());
+        if (matched) {
+          workerId = matched.id;
+          workerInfo = { nama: matched.nama, sid: matched.sid, jabatan: matched.jabatan };
+          confidenceScore = det.similarity || null;
+        } else {
+          console.log(`face_name "${det.face_name}" not found in workers table`);
         }
-
-        const matchedFace = bestFaceIdx >= 0 ? faces[bestFaceIdx] : null;
-        if (bestFaceIdx >= 0) usedFaces.add(bestFaceIdx);
-
-        // Add global shoe/vest detection to each person's PPE
-        const mergedPPE = { ...ppePerson.ppeResults };
-        if (globalShoeDetected && !mergedPPE["SAFETY_SHOES"]) {
-          mergedPPE["SAFETY_SHOES"] = { detected: true, confidence: globalShoeConfidence };
-        }
-        if (globalVestDetected && !mergedPPE["REFLECTIVE_VEST"]) {
-          mergedPPE["REFLECTIVE_VEST"] = { detected: true, confidence: globalVestConfidence };
-        }
-
-        results.push({
-          workerId: matchedFace?.workerId || null,
-          workerInfo: matchedFace?.workerInfo || null,
-          confidenceScore: matchedFace?.confidenceScore || null,
-          ppeResults: mergedPPE,
-          personIndex: ppePerson.personIdx,
-          boundingBox: ppePerson.boundingBox || null,
-        });
       }
-    } else {
-      // No PPE persons detected — use faces only
-      for (const face of faces) {
-        const mergedPPE: Record<string, { detected: boolean; confidence: number }> = {};
-        if (globalShoeDetected) mergedPPE["SAFETY_SHOES"] = { detected: true, confidence: globalShoeConfidence };
-        if (globalVestDetected) mergedPPE["REFLECTIVE_VEST"] = { detected: true, confidence: globalVestConfidence };
 
-        results.push({
-          workerId: face.workerId,
-          workerInfo: face.workerInfo,
-          confidenceScore: face.confidenceScore,
-          ppeResults: mergedPPE,
-          personIndex: 0,
-          boundingBox: face.boundingBox || null,
-        });
-      }
+      // Build PPE results from ppe_missing
+      const ppeResults = buildPpeResults(det.ppe_missing);
+
+      results.push({
+        workerId,
+        workerInfo,
+        confidenceScore,
+        ppeResults,
+        personIndex: pIdx,
+        boundingBox: normBox,
+      });
+    }
+
+    // If no person detections, create a single unknown entry
+    if (results.length === 0) {
+      results.push({
+        workerId: null,
+        workerInfo: null,
+        confidenceScore: null,
+        ppeResults: buildPpeResults(undefined),
+        personIndex: 0,
+        boundingBox: { Left: 0, Top: 0, Width: 1, Height: 1 },
+      });
     }
 
     console.log(`Total persons to process: ${results.length}`);
@@ -530,11 +343,7 @@ Deno.serve(async (req) => {
           return false;
         });
 
-        const requiredItems = [...new Set(applicableRules.map((r) => {
-          // Normalize: if zone rule says FACE_COVER, check as SAFETY_GLASSES
-          const item = r.ppe_item;
-          return PPE_MAP[item] || item;
-        }))];
+        const requiredItems = [...new Set(applicableRules.map((r) => r.ppe_item))];
 
         for (const item of requiredItems) {
           const result = person.ppeResults[item];
