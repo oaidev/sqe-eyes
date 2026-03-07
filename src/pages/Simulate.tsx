@@ -321,14 +321,14 @@ export default function Simulate() {
                 persons={results
                   .filter(r => r.timestamp.getTime() === results[0]?.timestamp.getTime())
                   .map(r => {
-                    const hasViolation = !r.worker || Object.values(r.ppe_results).some(v => !v.detected) || r.alert_created;
+                    const hasPpeViolation = Object.values(r.ppe_results).some(v => !v.detected);
                     const ppeItems = Object.entries(r.ppe_results)
                       .map(([k, v]) => `${ppeLabel[k] || k} ${v.detected ? '✓' : '✗'}`)
                       .join(', ');
                     return {
                       boundingBox: r.boundingBox,
                       workerName: r.worker?.nama || null,
-                      hasViolation,
+                      hasViolation: hasPpeViolation,
                       ppeStatus: ppeItems,
                       personIndex: r.personIndex,
                     };
@@ -373,13 +373,27 @@ export default function Simulate() {
                         {/* Jabatan */}
                         <p className="text-xs text-muted-foreground">Jabatan: {r.worker?.jabatan || '-'}</p>
 
-                        {/* Jenis Pelanggaran */}
-                        <div className="flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3 text-destructive" />
-                          <Badge variant="destructive" className="text-[10px]">
-                            {r.jenisPelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Tanpa Izin' : 'APD Tidak Lengkap'}
-                          </Badge>
-                        </div>
+                        {/* APD Status */}
+                        {(() => {
+                          const hasPpeViolation = Object.values(r.ppe_results).some(v => !v.detected);
+                          if (r.jenisPelanggaran === 'KELUAR_TANPA_IZIN') {
+                            return (
+                              <div className="flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3 text-destructive" />
+                                <Badge variant="destructive" className="text-[10px]">Keluar Tanpa Izin</Badge>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1">
+                              {hasPpeViolation ? (
+                                <><AlertTriangle className="h-3 w-3 text-destructive" /><Badge variant="destructive" className="text-[10px]">APD Tidak Lengkap</Badge></>
+                              ) : (
+                                <><ShieldCheck className="h-3 w-3 text-green-600" /><Badge className="text-[10px] bg-green-600 hover:bg-green-700">APD Lengkap</Badge></>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* PPE Checklist - show all 5 items */}
                         {r.jenisPelanggaran === 'KELUAR_TANPA_IZIN' ? (
