@@ -291,7 +291,7 @@ export default function Workers() {
               <div className="grid gap-2">
                 <Label>SID <span className="text-destructive">*</span></Label>
                 <Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" maxLength={100} />
-                <p className="text-xs text-muted-foreground">Wajib diisi. Maks. 100 karakter. Tidak dapat diubah setelah disimpan.</p>
+                <p className="text-xs text-muted-foreground text-right">{form.sid.length}/100</p>
               </div>
             )}
             <div className="grid gap-2">
