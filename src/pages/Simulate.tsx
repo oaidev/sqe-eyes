@@ -290,11 +290,36 @@ export default function Simulate() {
                 )}
               </div>
               {webcamActive && (
-                <div className="flex items-center gap-3">
-                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
-                  <Label className="text-sm">Auto-capture setiap</Label>
-                  <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
-                  <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
+                    <Label className="text-sm">Auto-capture</Label>
+                    <Select value={captureMode} onValueChange={(v: 'interval' | 'smart') => setCaptureMode(v)} disabled={!autoCapture}>
+                      <SelectTrigger className="w-32 h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="interval">Interval</SelectItem>
+                        <SelectItem value="smart">Smart (Motion)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {autoCapture && captureMode === 'interval' && (
+                    <div className="flex items-center gap-3 ml-14">
+                      <Label className="text-xs">Setiap</Label>
+                      <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
+                      <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
+                    </div>
+                  )}
+                  {autoCapture && captureMode === 'smart' && (
+                    <div className="flex items-center gap-2 ml-14">
+                      {motionDetected ? (
+                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />Gerakan terdeteksi!</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />Menunggu gerakan...</Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </TabsContent>
