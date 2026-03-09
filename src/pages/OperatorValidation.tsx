@@ -332,7 +332,7 @@ export default function OperatorValidation() {
       <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detail Event</DialogTitle>
+            <DialogTitle>Detail Alert</DialogTitle>
             <DialogDescription>Lihat detail dan lakukan validasi</DialogDescription>
           </DialogHeader>
           {selectedEvent && (

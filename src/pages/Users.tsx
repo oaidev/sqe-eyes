@@ -133,7 +133,9 @@ export default function Users() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map(u => (
+                  {filteredUsers.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Tidak ada data pengguna</TableCell></TableRow>
+                  ) : filteredUsers.map(u => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.full_name || '—'}</TableCell>

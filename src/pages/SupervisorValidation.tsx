@@ -356,7 +356,7 @@ export default function SupervisorValidation() {
       <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detail & Validasi Final</DialogTitle>
+            <DialogTitle>Detail Alert & Validasi Final</DialogTitle>
             <DialogDescription>Validasi final supervisor jika diperlukan</DialogDescription>
           </DialogHeader>
           {selectedEvent && (
