@@ -233,7 +233,7 @@ export default function Simulate() {
         setMotionDetected(hasMotion);
         if (hasMotion) {
           const b = captureFrame(videoEl);
-          if (b) runDetection(b);
+          if (b) checkOffTimeAndRun(b);
         }
       }, 1000); // Check every 1s
     } else {
