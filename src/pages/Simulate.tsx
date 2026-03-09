@@ -241,7 +241,7 @@ export default function Simulate() {
       setMotionDetected(false);
     }
     return () => { if (smartCaptureRef.current) clearInterval(smartCaptureRef.current); };
-  }, [autoCapture, captureMode, webcamActive, videoSrc, detecting, captureFrame, runDetection, detectMotion]);
+  }, [autoCapture, captureMode, webcamActive, videoSrc, detecting, captureFrame, checkOffTimeAndRun, detectMotion]);
 
   const selectedCamera = cameras.find((c: any) => c.id === selectedCameraId);
 
