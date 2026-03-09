@@ -260,8 +260,8 @@ export default function SupervisorValidation() {
     <AppLayout title="Validasi Supervisor">
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Event Tervalidasi</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Final Supervisor</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{supervisorValidations.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Alert Tervalidasi</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Final Supervisor</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{filtered.filter(e => { const alert = e.alerts?.[0]; if (!alert) return false; const sup = supValidationMap[alert.id]; return sup?.status === 'VALID' || sup?.status === 'TIDAK_VALID'; }).length}</div></CardContent></Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
