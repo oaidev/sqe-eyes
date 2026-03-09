@@ -341,11 +341,19 @@ export default function Zones() {
             {/* Conditional: Waktu Kamera Off for Keluar Tanpa Izin */}
             {camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' && (
               <div className="border-t pt-3">
-                <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
-                <div className="grid grid-cols-2 gap-4 mt-2">
-                  <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+                <div className="flex items-center justify-between">
+                  <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
+                  <Switch checked={offTimeEnabled} onCheckedChange={v => {
+                    setOffTimeEnabled(v);
+                    if (!v) setCamForm({ ...camForm, off_time_start: '', off_time_end: '' });
+                  }} />
                 </div>
+                {offTimeEnabled && (
+                  <div className="grid grid-cols-2 gap-4 mt-2">
+                    <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+                  </div>
+                )}
               </div>
             )}
           </div>
