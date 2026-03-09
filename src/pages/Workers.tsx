@@ -149,7 +149,8 @@ export default function Workers() {
     for (let i = 0; i < rows.length; i++) {
       const { error } = await supabase.from('workers').insert(rows[i]);
       if (error) {
-        errors.push(`Baris ${i + 2}: ${error.message}`);
+        const msg = error.message?.includes('duplicate key') || error.message?.includes('unique constraint') ? 'SID sudah terdaftar' : error.message;
+        errors.push(`Baris ${i + 2}: ${msg}`);
       } else {
         successCount++;
       }
