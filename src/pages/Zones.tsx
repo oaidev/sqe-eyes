@@ -40,6 +40,7 @@ export default function Zones() {
   const [camDialog, setCamDialog] = useState(false);
   const [editingCam, setEditingCam] = useState<CameraRow | null>(null);
   const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; jenis_pelanggaran: string; zone_id: string; off_time_start: string; off_time_end: string }>({ name: '', rtsp_url: '', jenis_pelanggaran: 'APD_TIDAK_LENGKAP', zone_id: '', off_time_start: '', off_time_end: '' });
+  const [offTimeEnabled, setOffTimeEnabled] = useState(false);
   const [deleteZone, setDeleteZone] = useState<Zone | null>(null);
   const [deleteCam, setDeleteCam] = useState<CameraRow | null>(null);
 
