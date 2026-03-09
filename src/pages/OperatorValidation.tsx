@@ -12,11 +12,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert, Image, Video } from 'lucide-react';
+import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert, Check, ChevronsUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 const PPE_LABELS: Record<string, string> = {
   HEAD_COVER: 'Helm', HAND_COVER: 'Sarung Tangan', SAFETY_GLASSES: 'Kacamata Safety',
@@ -28,6 +31,14 @@ const JENIS_PELANGGARAN_OPTIONS = [
   { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Zona' },
 ];
 
+const ALASAN_LABELS: Record<string, string> = {
+  APD_TIDAK_LENGKAP: 'APD Tidak Lengkap',
+  APD_LENGKAP: 'APD Lengkap',
+  TIDAK_ADA_IZIN: 'Tidak Ada Izin',
+  SUDAH_IZIN: 'Sudah Ada Izin',
+  LAINNYA: 'Alasan Lainnya',
+};
+
 function getAlasanOptions(jenisPelanggaran: string, status: string) {
   if (jenisPelanggaran === 'APD_TIDAK_LENGKAP') {
     if (status === 'VALID') return [{ value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' }, { value: 'LAINNYA', label: 'Alasan Lainnya' }];
@@ -38,6 +49,18 @@ function getAlasanOptions(jenisPelanggaran: string, status: string) {
     return [{ value: 'SUDAH_IZIN', label: 'Sudah Ada Izin' }, { value: 'LAINNYA', label: 'Alasan Lainnya' }];
   }
   return [{ value: 'LAINNYA', label: 'Alasan Lainnya' }];
+}
+
+interface ValidationFull {
+  id: string;
+  alert_id: string;
+  status: string;
+  validation_level: string;
+  jenis_pelanggaran: string | null;
+  alasan_type: string | null;
+  alasan_text: string | null;
+  supervisor_id: string;
+  created_at: string;
 }
 
 interface EventRow {
@@ -71,6 +94,7 @@ export default function OperatorValidation() {
   const [alasanText, setAlasanText] = useState('');
   const [reviseSid, setReviseSid] = useState('__none__');
   const [jenisPelanggaran, setJenisPelanggaran] = useState('APD_TIDAK_LENGKAP');
+  const [sidPopoverOpen, setSidPopoverOpen] = useState(false);
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['operator-events', dateFrom, dateTo],
@@ -89,8 +113,8 @@ export default function OperatorValidation() {
   const { data: validations = [] } = useQuery({
     queryKey: ['operator-validations'],
     queryFn: async () => {
-      const { data } = await supabase.from('supervisor_validations').select('alert_id, status, validation_level, jenis_pelanggaran');
-      return data || [];
+      const { data } = await supabase.from('supervisor_validations').select('*').eq('validation_level', 'operator');
+      return (data || []) as ValidationFull[];
     },
   });
 
@@ -102,10 +126,33 @@ export default function OperatorValidation() {
     },
   });
 
+  // Fetch profiles for validator names
+  const validatorIds = useMemo(() => {
+    const ids = new Set<string>();
+    validations.forEach(v => { if (v.supervisor_id) ids.add(v.supervisor_id); });
+    return Array.from(ids);
+  }, [validations]);
+
+  const { data: profiles = [] } = useQuery({
+    queryKey: ['profiles-validators', validatorIds],
+    queryFn: async () => {
+      if (validatorIds.length === 0) return [];
+      const { data } = await supabase.from('profiles').select('id, full_name').in('id', validatorIds);
+      return data || [];
+    },
+    enabled: validatorIds.length > 0,
+  });
+
+  const profileMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    profiles.forEach((p: any) => { map[p.id] = p.full_name || '-'; });
+    return map;
+  }, [profiles]);
+
   const validationMap = useMemo(() => {
-    const map: Record<string, { status: string; jenis_pelanggaran: string | null }> = {};
-    validations.forEach((v: any) => {
-      if (v.validation_level === 'operator') map[v.alert_id] = { status: v.status, jenis_pelanggaran: v.jenis_pelanggaran };
+    const map: Record<string, ValidationFull> = {};
+    validations.forEach((v) => {
+      if (v.validation_level === 'operator') map[v.alert_id] = v;
     });
     return map;
   }, [validations]);
@@ -182,6 +229,7 @@ export default function OperatorValidation() {
       toast({ title: 'Validasi disimpan' });
       qc.invalidateQueries({ queryKey: ['operator-validations'] });
       qc.invalidateQueries({ queryKey: ['operator-events'] });
+      qc.invalidateQueries({ queryKey: ['profiles-validators'] });
       setSelectedEvent(null);
     },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
@@ -226,7 +274,10 @@ export default function OperatorValidation() {
     setAlasanType(opts[0]?.value || 'LAINNYA');
     setAlasanText('');
     setReviseSid('__none__');
+    setSidPopoverOpen(false);
   };
+
+  const selectedWorkerForRevision = allWorkers.find((w: any) => w.id === reviseSid);
 
   return (
     <AppLayout title="Validasi Operator">
@@ -335,7 +386,13 @@ export default function OperatorValidation() {
             <DialogTitle>Detail Alert</DialogTitle>
             <DialogDescription>Lihat detail dan lakukan validasi</DialogDescription>
           </DialogHeader>
-          {selectedEvent && (
+          {selectedEvent && (() => {
+            const alertId = selectedEvent.alerts?.[0]?.id;
+            const existingValidation = alertId ? validationMap[alertId] : null;
+            const isValidated = !!existingValidation;
+            const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === (existingValidation?.jenis_pelanggaran || selectedEvent.cameras?.jenis_pelanggaran))?.label || selectedEvent.cameras?.jenis_pelanggaran || '-';
+
+            return (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Waktu:</span> {format(new Date(selectedEvent.detected_at), 'dd MMM yyyy HH:mm:ss', { locale: idLocale })}</div>
@@ -343,6 +400,7 @@ export default function OperatorValidation() {
                 <div><span className="text-muted-foreground">Kamera:</span> {selectedEvent.cameras?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Zona:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Status:</span> {statusBadge(getEventStatus(selectedEvent))}</div>
+                <div><span className="text-muted-foreground">Jenis Pelanggaran:</span> {jpLabel}</div>
               </div>
 
               {/* PPE Checklist */}
@@ -387,29 +445,57 @@ export default function OperatorValidation() {
                 )}
               </div>
 
-              {/* Validation form */}
-              {selectedEvent.alerts?.[0] && getEventStatus(selectedEvent) === 'BARU' && (
+              {/* Show validation info after saved */}
+              {isValidated && existingValidation && (
+                <div className="bg-muted rounded-lg p-3 text-sm border-t">
+                  <p className="font-medium mb-2">Hasil Validasi Operator</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><span className="text-muted-foreground">Status:</span> {statusBadge(existingValidation.status)}</div>
+                    <div><span className="text-muted-foreground">Alasan:</span> {ALASAN_LABELS[existingValidation.alasan_type || ''] || existingValidation.alasan_type || '-'}</div>
+                    {existingValidation.alasan_text && (
+                      <div className="col-span-2"><span className="text-muted-foreground">Detail Alasan:</span> {existingValidation.alasan_text}</div>
+                    )}
+                    <div><span className="text-muted-foreground">Divalidasi oleh:</span> {profileMap[existingValidation.supervisor_id] || '-'}</div>
+                    <div><span className="text-muted-foreground">Waktu validasi:</span> {format(new Date(existingValidation.created_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Validation form - only show when not yet validated */}
+              {selectedEvent.alerts?.[0] && !isValidated && (
                 <div className="border-t pt-4 space-y-3">
                   <Label className="font-medium">Validasi Manual</Label>
                   <div className="grid gap-3">
                     <div className="grid gap-2">
                       <Label className="text-sm">Revisi SID (Opsional)</Label>
-                      <Select value={reviseSid} onValueChange={setReviseSid}>
-                        <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Tidak ada revisi</SelectItem>
-                          {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-sm">Jenis Pelanggaran</Label>
-                      <Select value={jenisPelanggaran} onValueChange={v => { setJenisPelanggaran(v); const opts = getAlasanOptions(v, validationStatus); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={sidPopoverOpen} onOpenChange={setSidPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" role="combobox" aria-expanded={sidPopoverOpen} className="justify-between w-full font-normal">
+                            {reviseSid === '__none__' ? 'Tidak ada revisi' : selectedWorkerForRevision ? `${selectedWorkerForRevision.sid} - ${selectedWorkerForRevision.nama}` : 'Pilih pekerja...'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[400px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Cari SID atau Nama..." />
+                            <CommandList>
+                              <CommandEmpty>Tidak ditemukan</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem value="__none__" onSelect={() => { setReviseSid('__none__'); setSidPopoverOpen(false); }}>
+                                  <Check className={cn("mr-2 h-4 w-4", reviseSid === '__none__' ? "opacity-100" : "opacity-0")} />
+                                  Tidak ada revisi
+                                </CommandItem>
+                                {allWorkers.map((w: any) => (
+                                  <CommandItem key={w.id} value={`${w.sid} ${w.nama}`} onSelect={() => { setReviseSid(w.id); setSidPopoverOpen(false); }}>
+                                    <Check className={cn("mr-2 h-4 w-4", reviseSid === w.id ? "opacity-100" : "opacity-0")} />
+                                    {w.sid} - {w.nama}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-sm">Status Validasi</Label>
@@ -440,7 +526,8 @@ export default function OperatorValidation() {
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedEvent(null)}>Tutup</Button>
             {selectedEvent?.alerts?.[0] && getEventStatus(selectedEvent) === 'BARU' && (

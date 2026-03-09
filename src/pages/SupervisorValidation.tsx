@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
 const PPE_LABELS: Record<string, string> = {
@@ -27,6 +27,14 @@ const JENIS_PELANGGARAN_OPTIONS = [
   { value: 'APD_TIDAK_LENGKAP', label: 'APD Tidak Lengkap' },
   { value: 'KELUAR_TANPA_IZIN', label: 'Keluar Zona' },
 ];
+
+const ALASAN_LABELS: Record<string, string> = {
+  APD_TIDAK_LENGKAP: 'APD Tidak Lengkap',
+  APD_LENGKAP: 'APD Lengkap',
+  TIDAK_ADA_IZIN: 'Tidak Ada Izin',
+  SUDAH_IZIN: 'Sudah Ada Izin',
+  LAINNYA: 'Alasan Lainnya',
+};
 
 function getAlasanOptions(jenisPelanggaran: string, status: string) {
   if (jenisPelanggaran === 'APD_TIDAK_LENGKAP') {
@@ -63,6 +71,7 @@ interface ValidationRow {
   alasan_text: string | null;
   supervisor_id: string;
   jenis_pelanggaran: string | null;
+  created_at: string;
 }
 
 export default function SupervisorValidation() {
@@ -110,6 +119,30 @@ export default function SupervisorValidation() {
     supervisorValidations.forEach(v => { map[v.alert_id] = v; });
     return map;
   }, [supervisorValidations]);
+
+  // Fetch profiles for validator names
+  const allValidatorIds = useMemo(() => {
+    const ids = new Set<string>();
+    operatorValidations.forEach(v => { if (v.supervisor_id) ids.add(v.supervisor_id); });
+    supervisorValidations.forEach(v => { if (v.supervisor_id) ids.add(v.supervisor_id); });
+    return Array.from(ids);
+  }, [operatorValidations, supervisorValidations]);
+
+  const { data: profiles = [] } = useQuery({
+    queryKey: ['profiles-validators-sup', allValidatorIds],
+    queryFn: async () => {
+      if (allValidatorIds.length === 0) return [];
+      const { data } = await supabase.from('profiles').select('id, full_name').in('id', allValidatorIds);
+      return data || [];
+    },
+    enabled: allValidatorIds.length > 0,
+  });
+
+  const profileMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    profiles.forEach((p: any) => { map[p.id] = p.full_name || '-'; });
+    return map;
+  }, [profiles]);
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['supervisor-events', dateFrom, dateTo],
@@ -206,6 +239,7 @@ export default function SupervisorValidation() {
       toast({ title: 'Validasi final disimpan' });
       qc.invalidateQueries({ queryKey: ['supervisor-validations'] });
       qc.invalidateQueries({ queryKey: ['supervisor-events'] });
+      qc.invalidateQueries({ queryKey: ['profiles-validators-sup'] });
       setSelectedEvent(null);
     },
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
@@ -359,29 +393,55 @@ export default function SupervisorValidation() {
             <DialogTitle>Detail Alert & Validasi Final</DialogTitle>
             <DialogDescription>Validasi final supervisor jika diperlukan</DialogDescription>
           </DialogHeader>
-          {selectedEvent && (
+          {selectedEvent && (() => {
+            const alertId = selectedEvent.alerts?.[0]?.id;
+            const opVal = alertId ? opValidationMap[alertId] : null;
+            const supVal = alertId ? supValidationMap[alertId] : null;
+            const hasFinalValidation = !!supVal;
+            const jpSource = supVal?.jenis_pelanggaran || opVal?.jenis_pelanggaran || selectedEvent.cameras?.jenis_pelanggaran;
+            const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === jpSource)?.label || jpSource || '-';
+
+            return (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-muted-foreground">Waktu:</span> {format(new Date(selectedEvent.detected_at), 'dd MMM yyyy HH:mm:ss', { locale: idLocale })}</div>
                 <div><span className="text-muted-foreground">Pekerja:</span> {selectedEvent.workers ? `${selectedEvent.workers.sid} - ${selectedEvent.workers.nama}` : 'Tidak Dikenal'}</div>
                 <div><span className="text-muted-foreground">Kamera:</span> {selectedEvent.cameras?.name || '-'}</div>
                 <div><span className="text-muted-foreground">Zona:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
+                <div><span className="text-muted-foreground">Jenis Pelanggaran:</span> {jpLabel}</div>
               </div>
 
               {/* Operator validation info */}
-              {selectedEvent.alerts?.[0] && opValidationMap[selectedEvent.alerts[0].id] && (() => {
-                const opVal = opValidationMap[selectedEvent.alerts[0].id];
-                const opJpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === opVal.jenis_pelanggaran)?.label || opVal.jenis_pelanggaran || '-';
-                return (
-                  <div className="bg-muted rounded-lg p-3 text-sm">
-                    <p className="font-medium mb-1">Validasi Operator:</p>
-                    <p>Status: {statusBadge(opVal.status)}</p>
-                    <p className="mt-1">Jenis Pelanggaran: {opJpLabel}</p>
-                    <p className="mt-1">Alasan: {opVal.alasan_type?.replace(/_/g, ' ') || '-'}</p>
-                    {opVal.alasan_text && <p className="mt-1 text-muted-foreground">{opVal.alasan_text}</p>}
+              {opVal && (
+                <div className="bg-muted rounded-lg p-3 text-sm">
+                  <p className="font-medium mb-2">Validasi Operator</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><span className="text-muted-foreground">Status:</span> {statusBadge(opVal.status)}</div>
+                    <div><span className="text-muted-foreground">Alasan:</span> {ALASAN_LABELS[opVal.alasan_type || ''] || opVal.alasan_type?.replace(/_/g, ' ') || '-'}</div>
+                    {opVal.alasan_text && (
+                      <div className="col-span-2"><span className="text-muted-foreground">Detail Alasan:</span> {opVal.alasan_text}</div>
+                    )}
+                    <div><span className="text-muted-foreground">Divalidasi oleh:</span> {profileMap[opVal.supervisor_id] || '-'}</div>
+                    <div><span className="text-muted-foreground">Waktu validasi:</span> {format(new Date(opVal.created_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</div>
                   </div>
-                );
-              })()}
+                </div>
+              )}
+
+              {/* Supervisor validation info - shown after final save */}
+              {hasFinalValidation && supVal && (
+                <div className="bg-muted rounded-lg p-3 text-sm border-l-4 border-primary">
+                  <p className="font-medium mb-2">Validasi Supervisor</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><span className="text-muted-foreground">Status:</span> {statusBadge(supVal.status)}</div>
+                    <div><span className="text-muted-foreground">Alasan:</span> {ALASAN_LABELS[supVal.alasan_type || ''] || supVal.alasan_type?.replace(/_/g, ' ') || '-'}</div>
+                    {supVal.alasan_text && (
+                      <div className="col-span-2"><span className="text-muted-foreground">Detail Alasan:</span> {supVal.alasan_text}</div>
+                    )}
+                    <div><span className="text-muted-foreground">Divalidasi oleh:</span> {profileMap[supVal.supervisor_id] || '-'}</div>
+                    <div><span className="text-muted-foreground">Waktu validasi:</span> {format(new Date(supVal.created_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</div>
+                  </div>
+                </div>
+              )}
 
               {Object.keys(ppeResults).length > 0 && (
                 <div>
@@ -424,64 +484,60 @@ export default function SupervisorValidation() {
                 )}
               </div>
 
-              {/* Final form */}
-              <div className="border-t pt-4 space-y-3">
-                <Label className="font-medium">Validasi Final Supervisor</Label>
-                <div className="grid gap-3">
-                  <div className="grid gap-2">
-                    <Label className="text-sm">Revisi SID (Opsional)</Label>
-                    <Select value={reviseSid} onValueChange={setReviseSid}>
-                      <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Tidak ada revisi</SelectItem>
-                        {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-sm">Jenis Pelanggaran</Label>
-                    <Select value={jenisPelanggaran} onValueChange={v => { setJenisPelanggaran(v); const opts = getAlasanOptions(v, finalStatus); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-sm">Status</Label>
-                    <Select value={finalStatus} onValueChange={v => { setFinalStatus(v as any); const opts = getAlasanOptions(jenisPelanggaran, v); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="VALID">Valid</SelectItem>
-                        <SelectItem value="TIDAK_VALID">Tidak Valid</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-sm">Alasan</Label>
-                    <Select value={alasanType} onValueChange={setAlasanType}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {alasanOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {alasanType === 'LAINNYA' && (
+              {/* Final form - only show when not yet validated by supervisor */}
+              {!hasFinalValidation && (
+                <div className="border-t pt-4 space-y-3">
+                  <Label className="font-medium">Validasi Final Supervisor</Label>
+                  <div className="grid gap-3">
                     <div className="grid gap-2">
-                      <Label className="text-sm">Alasan Lainnya</Label>
-                      <Textarea value={alasanText} onChange={e => setAlasanText(e.target.value)} placeholder="Tulis alasan..." />
+                      <Label className="text-sm">Revisi SID (Opsional)</Label>
+                      <Select value={reviseSid} onValueChange={setReviseSid}>
+                        <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Tidak ada revisi</SelectItem>
+                          {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )}
+                    <div className="grid gap-2">
+                      <Label className="text-sm">Status</Label>
+                      <Select value={finalStatus} onValueChange={v => { setFinalStatus(v as any); const opts = getAlasanOptions(jenisPelanggaran, v); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="VALID">Valid</SelectItem>
+                          <SelectItem value="TIDAK_VALID">Tidak Valid</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-sm">Alasan</Label>
+                      <Select value={alasanType} onValueChange={setAlasanType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {alasanOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {alasanType === 'LAINNYA' && (
+                      <div className="grid gap-2">
+                        <Label className="text-sm">Alasan Lainnya</Label>
+                        <Textarea value={alasanText} onChange={e => setAlasanText(e.target.value)} placeholder="Tulis alasan..." />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-          )}
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedEvent(null)}>Tutup</Button>
-            <Button onClick={() => submitFinal.mutate()} disabled={submitFinal.isPending}>
-              {submitFinal.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              Simpan Final
-            </Button>
+            {selectedEvent?.alerts?.[0] && !supValidationMap[selectedEvent.alerts[0].id] && (
+              <Button onClick={() => submitFinal.mutate()} disabled={submitFinal.isPending}>
+                {submitFinal.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                Simpan Final
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
