@@ -159,6 +159,7 @@ export default function Zones() {
       off_time_start: (cam as any)?.off_time_start || '',
       off_time_end: (cam as any)?.off_time_end || '',
     });
+    setOffTimeEnabled(!!(cam as any)?.off_time_start);
     const camRules = ppeRules.filter((r: any) => r.camera_id === cam?.id);
     const gen: PpeMatrix = {};
     const jabMap = new Map<string, PpeMatrix>();

@@ -69,10 +69,21 @@ export default function Simulate() {
   const { data: cameras = [] } = useQuery({
     queryKey: ['cameras-for-simulate'],
     queryFn: async () => {
-      const { data } = await supabase.from('cameras').select('id, name, zone_id, jenis_pelanggaran, zones(name)').eq('is_active', true).order('name');
+      const { data } = await supabase.from('cameras').select('id, name, zone_id, jenis_pelanggaran, off_time_start, off_time_end, zones(name)').eq('is_active', true).order('name');
       return data || [];
     },
   });
+
+  const isInOffTime = useCallback((cam: any): boolean => {
+    if (cam?.jenis_pelanggaran !== 'KELUAR_TANPA_IZIN') return false;
+    if (!cam?.off_time_start || !cam?.off_time_end) return false;
+    const now = new Date();
+    const nowHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const start = cam.off_time_start.substring(0, 5); // "HH:MM"
+    const end = cam.off_time_end.substring(0, 5);
+    if (start <= end) return nowHHMM >= start && nowHHMM <= end;
+    return nowHHMM >= start || nowHHMM <= end; // overnight
+  }, []);
 
   useEffect(() => {
     if (webcamActive && webcamVideoRef.current && webcamStreamRef.current) {
