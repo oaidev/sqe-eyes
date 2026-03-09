@@ -184,14 +184,44 @@ export default function Simulate() {
     setVideoSrc(URL.createObjectURL(file));
   };
 
+  // Interval-based auto capture
   useEffect(() => {
-    if (autoCapture && webcamActive && webcamVideoRef.current) {
-      autoCaptureRef.current = setInterval(() => { if (webcamVideoRef.current && !detecting) { const b = captureFrame(webcamVideoRef.current); if (b) runDetection(b); } }, autoCaptureInterval * 1000);
-    } else if (autoCapture && videoSrc && videoRef.current) {
-      autoCaptureRef.current = setInterval(() => { if (videoRef.current && !videoRef.current.paused && !detecting) { const b = captureFrame(videoRef.current); if (b) runDetection(b); } }, autoCaptureInterval * 1000);
-    } else { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); }
+    if (autoCapture && captureMode === 'interval') {
+      const videoEl = webcamActive ? webcamVideoRef.current : (videoSrc ? videoRef.current : null);
+      if (!videoEl) return;
+      autoCaptureRef.current = setInterval(() => {
+        if (detecting) return;
+        if (videoEl === videoRef.current && videoEl.paused) return;
+        const b = captureFrame(videoEl);
+        if (b) runDetection(b);
+      }, autoCaptureInterval * 1000);
+    } else {
+      if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
+    }
     return () => { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); };
-  }, [autoCapture, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
+  }, [autoCapture, captureMode, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
+
+  // Smart (motion-based) auto capture
+  useEffect(() => {
+    if (autoCapture && captureMode === 'smart') {
+      const videoEl = webcamActive ? webcamVideoRef.current : (videoSrc ? videoRef.current : null);
+      if (!videoEl) return;
+      smartCaptureRef.current = setInterval(() => {
+        if (detecting) return;
+        if (videoEl === videoRef.current && videoEl.paused) return;
+        const hasMotion = detectMotion(videoEl);
+        setMotionDetected(hasMotion);
+        if (hasMotion) {
+          const b = captureFrame(videoEl);
+          if (b) runDetection(b);
+        }
+      }, 1000); // Check every 1s
+    } else {
+      if (smartCaptureRef.current) { clearInterval(smartCaptureRef.current); smartCaptureRef.current = null; }
+      setMotionDetected(false);
+    }
+    return () => { if (smartCaptureRef.current) clearInterval(smartCaptureRef.current); };
+  }, [autoCapture, captureMode, webcamActive, videoSrc, detecting, captureFrame, runDetection, detectMotion]);
 
   const selectedCamera = cameras.find((c: any) => c.id === selectedCameraId);
 
