@@ -11,10 +11,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
 import { PpeMatrixDisplay } from '@/components/simulate/PpeMatrixDisplay';
+import { useMotionDetection } from '@/hooks/useMotionDetection';
 
 interface BoundingBoxData {
   Left: number; Top: number; Width: number; Height: number;
