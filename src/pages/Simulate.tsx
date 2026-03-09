@@ -46,12 +46,16 @@ export default function Simulate() {
   const [results, setResults] = useState<DetectionResult[]>([]);
   const [autoCapture, setAutoCapture] = useState(false);
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(5);
+  const [captureMode, setCaptureMode] = useState<'interval' | 'smart'>('interval');
+  const [motionDetected, setMotionDetected] = useState(false);
   const autoCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const smartCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
   const webcamStreamRef = useRef<MediaStream | null>(null);
+  const { detectMotion, resetMotion } = useMotionDetection();
 
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
