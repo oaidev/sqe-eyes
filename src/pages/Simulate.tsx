@@ -100,7 +100,10 @@ export default function Simulate() {
 
   const stopAutoCapture = () => {
     if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
+    if (smartCaptureRef.current) { clearInterval(smartCaptureRef.current); smartCaptureRef.current = null; }
     setAutoCapture(false);
+    setMotionDetected(false);
+    resetMotion();
   };
 
   const captureFrame = useCallback((videoEl: HTMLVideoElement): string | null => {
