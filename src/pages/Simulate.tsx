@@ -196,7 +196,7 @@ export default function Simulate() {
     reader.readAsDataURL(file);
   };
 
-  const handleImageDetect = () => { if (!uploadedImage) return; runDetection(uploadedImage.split(',')[1]); };
+  const handleImageDetect = () => { if (!uploadedImage) return; checkOffTimeAndRun(uploadedImage.split(',')[1]); };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
