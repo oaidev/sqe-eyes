@@ -232,7 +232,7 @@ export default function OperatorValidation() {
     <AppLayout title="Validasi Operator">
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Event</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Alert</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Pelanggaran</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{totalViolations}</div></CardContent></Card>
         </div>
 
