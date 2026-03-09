@@ -237,9 +237,20 @@ export default function OperatorValidation() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-[150px]" />
+          <Input type="date" value={dateFrom} onChange={e => {
+            const val = e.target.value;
+            setDateFrom(val);
+            if (dateTo < val) setDateTo(val);
+          }} className="w-[150px]" />
           <span className="text-sm text-muted-foreground">—</span>
-          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-[150px]" />
+          <Input type="date" value={dateTo} onChange={e => {
+            const val = e.target.value;
+            if (val < dateFrom) {
+              toast({ title: 'Tanggal akhir harus sama atau lebih besar dari tanggal awal', variant: 'destructive' });
+              return;
+            }
+            setDateTo(val);
+          }} className="w-[150px]" />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Cari SID/Nama..." value={searchSid} onChange={e => setSearchSid(e.target.value)} className="pl-8 w-[160px]" />
