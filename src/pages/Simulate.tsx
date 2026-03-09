@@ -270,7 +270,7 @@ export default function Simulate() {
               Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'}</Badge>
             </p>
           )}
-          {selectedCamera && (
+          {selectedCamera && (selectedCamera as any).jenis_pelanggaran !== 'KELUAR_TANPA_IZIN' && (
             <PpeMatrixDisplay
               zoneId={(selectedCamera as any).zone_id}
               zoneName={(selectedCamera as any).zones?.name}
