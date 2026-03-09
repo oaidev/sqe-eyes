@@ -219,7 +219,7 @@ export default function Simulate() {
       if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
     }
     return () => { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); };
-  }, [autoCapture, captureMode, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
+  }, [autoCapture, captureMode, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, checkOffTimeAndRun]);
 
   // Smart (motion-based) auto capture
   useEffect(() => {
