@@ -73,7 +73,10 @@ export default function Workers() {
       setDialogOpen(false); setEditing(null); setForm(emptyForm);
       toast({ title: editing ? 'Pekerja diperbarui' : 'Pekerja ditambahkan' });
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => {
+      const msg = e.message?.includes('duplicate key') || e.message?.includes('unique constraint') ? 'SID sudah terdaftar' : e.message;
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    },
   });
 
   const deleteMutation = useMutation({
