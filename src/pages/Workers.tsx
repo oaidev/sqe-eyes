@@ -297,7 +297,7 @@ export default function Workers() {
             <div className="grid gap-2">
               <Label>Nama <span className="text-destructive">*</span></Label>
               <Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} maxLength={100} />
-              <p className="text-xs text-muted-foreground">Wajib diisi. Maks. 100 karakter.</p>
+              <p className="text-xs text-muted-foreground text-right">{form.nama.length}/100</p>
             </div>
             <div className="grid gap-2">
               <Label>Jabatan <span className="text-destructive">*</span></Label>

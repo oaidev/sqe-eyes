@@ -190,7 +190,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
             disabled={enrolling}
             onChange={(e) => setFiles(Array.from(e.target.files || []).slice(0, 3))}
           />
-          <p className="text-xs text-muted-foreground">Maksimal 3 foto, format JPG/PNG</p>
+          <p className="text-xs text-muted-foreground">Maksimal 3 foto, format JPG/PNG. Ukuran maks. 2 MB per foto</p>
         </div>
 
         {/* Progress */}
