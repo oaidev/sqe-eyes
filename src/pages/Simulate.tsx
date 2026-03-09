@@ -11,10 +11,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Camera, Upload, Video, Loader2, UserCheck, UserX, ShieldCheck, ShieldAlert, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
 import { PpeMatrixDisplay } from '@/components/simulate/PpeMatrixDisplay';
+import { useMotionDetection } from '@/hooks/useMotionDetection';
 
 interface BoundingBoxData {
   Left: number; Top: number; Width: number; Height: number;
@@ -45,12 +46,16 @@ export default function Simulate() {
   const [results, setResults] = useState<DetectionResult[]>([]);
   const [autoCapture, setAutoCapture] = useState(false);
   const [autoCaptureInterval, setAutoCaptureInterval] = useState(5);
+  const [captureMode, setCaptureMode] = useState<'interval' | 'smart'>('interval');
+  const [motionDetected, setMotionDetected] = useState(false);
   const autoCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const smartCaptureRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const [webcamActive, setWebcamActive] = useState(false);
   const webcamStreamRef = useRef<MediaStream | null>(null);
+  const { detectMotion, resetMotion } = useMotionDetection();
 
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -95,7 +100,10 @@ export default function Simulate() {
 
   const stopAutoCapture = () => {
     if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
+    if (smartCaptureRef.current) { clearInterval(smartCaptureRef.current); smartCaptureRef.current = null; }
     setAutoCapture(false);
+    setMotionDetected(false);
+    resetMotion();
   };
 
   const captureFrame = useCallback((videoEl: HTMLVideoElement): string | null => {
@@ -176,14 +184,44 @@ export default function Simulate() {
     setVideoSrc(URL.createObjectURL(file));
   };
 
+  // Interval-based auto capture
   useEffect(() => {
-    if (autoCapture && webcamActive && webcamVideoRef.current) {
-      autoCaptureRef.current = setInterval(() => { if (webcamVideoRef.current && !detecting) { const b = captureFrame(webcamVideoRef.current); if (b) runDetection(b); } }, autoCaptureInterval * 1000);
-    } else if (autoCapture && videoSrc && videoRef.current) {
-      autoCaptureRef.current = setInterval(() => { if (videoRef.current && !videoRef.current.paused && !detecting) { const b = captureFrame(videoRef.current); if (b) runDetection(b); } }, autoCaptureInterval * 1000);
-    } else { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); }
+    if (autoCapture && captureMode === 'interval') {
+      const videoEl = webcamActive ? webcamVideoRef.current : (videoSrc ? videoRef.current : null);
+      if (!videoEl) return;
+      autoCaptureRef.current = setInterval(() => {
+        if (detecting) return;
+        if (videoEl === videoRef.current && videoEl.paused) return;
+        const b = captureFrame(videoEl);
+        if (b) runDetection(b);
+      }, autoCaptureInterval * 1000);
+    } else {
+      if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
+    }
     return () => { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); };
-  }, [autoCapture, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
+  }, [autoCapture, captureMode, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
+
+  // Smart (motion-based) auto capture
+  useEffect(() => {
+    if (autoCapture && captureMode === 'smart') {
+      const videoEl = webcamActive ? webcamVideoRef.current : (videoSrc ? videoRef.current : null);
+      if (!videoEl) return;
+      smartCaptureRef.current = setInterval(() => {
+        if (detecting) return;
+        if (videoEl === videoRef.current && videoEl.paused) return;
+        const hasMotion = detectMotion(videoEl);
+        setMotionDetected(hasMotion);
+        if (hasMotion) {
+          const b = captureFrame(videoEl);
+          if (b) runDetection(b);
+        }
+      }, 1000); // Check every 1s
+    } else {
+      if (smartCaptureRef.current) { clearInterval(smartCaptureRef.current); smartCaptureRef.current = null; }
+      setMotionDetected(false);
+    }
+    return () => { if (smartCaptureRef.current) clearInterval(smartCaptureRef.current); };
+  }, [autoCapture, captureMode, webcamActive, videoSrc, detecting, captureFrame, runDetection, detectMotion]);
 
   const selectedCamera = cameras.find((c: any) => c.id === selectedCameraId);
 
@@ -252,11 +290,36 @@ export default function Simulate() {
                 )}
               </div>
               {webcamActive && (
-                <div className="flex items-center gap-3">
-                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
-                  <Label className="text-sm">Auto-capture setiap</Label>
-                  <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
-                  <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
+                    <Label className="text-sm">Auto-capture</Label>
+                    <Select value={captureMode} onValueChange={(v: 'interval' | 'smart') => setCaptureMode(v)} disabled={!autoCapture}>
+                      <SelectTrigger className="w-32 h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="interval">Interval</SelectItem>
+                        <SelectItem value="smart">Smart (Motion)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {autoCapture && captureMode === 'interval' && (
+                    <div className="flex items-center gap-3 ml-14">
+                      <Label className="text-xs">Setiap</Label>
+                      <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
+                      <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
+                    </div>
+                  )}
+                  {autoCapture && captureMode === 'smart' && (
+                    <div className="flex items-center gap-2 ml-14">
+                      {motionDetected ? (
+                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />Gerakan terdeteksi!</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />Menunggu gerakan...</Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </TabsContent>
@@ -302,11 +365,36 @@ export default function Simulate() {
                 )}
               </div>
               {videoSrc && (
-                <div className="flex items-center gap-3">
-                  <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
-                  <Label className="text-sm">Auto-capture setiap</Label>
-                  <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
-                  <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
+                    <Label className="text-sm">Auto-capture</Label>
+                    <Select value={captureMode} onValueChange={(v: 'interval' | 'smart') => setCaptureMode(v)} disabled={!autoCapture}>
+                      <SelectTrigger className="w-32 h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="interval">Interval</SelectItem>
+                        <SelectItem value="smart">Smart (Motion)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {autoCapture && captureMode === 'interval' && (
+                    <div className="flex items-center gap-3 ml-14">
+                      <Label className="text-xs">Setiap</Label>
+                      <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
+                      <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
+                    </div>
+                  )}
+                  {autoCapture && captureMode === 'smart' && (
+                    <div className="flex items-center gap-2 ml-14">
+                      {motionDetected ? (
+                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />Gerakan terdeteksi!</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />Menunggu gerakan...</Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </TabsContent>
