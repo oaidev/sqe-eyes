@@ -149,7 +149,11 @@ export default function OperatorValidation() {
     });
   }, [events, searchSid, filterStatus, filterZone, filterCamera, filterJenisPelanggaran, validationMap]);
 
-  const totalViolations = filtered.filter(e => e.alerts && e.alerts.length > 0).length;
+  const totalViolations = filtered.filter(e => {
+    const alert = e.alerts?.[0];
+    if (!alert) return false;
+    return validationMap[alert.id]?.status === 'VALID';
+  }).length;
 
   const alasanOptions = getAlasanOptions(jenisPelanggaran, validationStatus);
 
