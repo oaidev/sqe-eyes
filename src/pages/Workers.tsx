@@ -8,20 +8,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Plus, Search, Upload, Pencil, Trash2, Loader2, Camera } from 'lucide-react';
+import { Plus, Search, Upload, Download, Pencil, Trash2, Loader2, Camera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { EnrollFaceDialog } from '@/components/workers/EnrollFaceDialog';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 
 type Worker = Tables<'workers'>;
 
-const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
-const DEPT_OPTIONS = ['Maintenance', 'Produksi', 'SHE', 'Plant', 'Logistik', 'Engineering', 'HRD'];
+const JABATAN_OPTIONS = ['Driver', 'Electrician', 'Helper', 'Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Welder'].sort();
+const DEPT_OPTIONS = ['Engineering', 'HRD', 'Logistik', 'Maintenance', 'Plant', 'Produksi', 'SHE'].sort();
 
-type FormState = { sid: string; nama: string; jabatan: string; departemen: string; is_active: boolean };
-const emptyForm: FormState = { sid: '', nama: '', jabatan: '', departemen: '', is_active: true };
+type FormState = { sid: string; nama: string; jabatan: string; departemen: string };
+const emptyForm: FormState = { sid: '', nama: '', jabatan: '', departemen: '' };
 
 export default function Workers() {
   const { toast } = useToast();
@@ -35,6 +36,7 @@ export default function Workers() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [enrollWorker, setEnrollWorker] = useState<Worker | null>(null);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['workers'],
@@ -59,10 +61,10 @@ export default function Workers() {
   const saveMutation = useMutation({
     mutationFn: async (values: FormState) => {
       if (editing) {
-        const { error } = await supabase.from('workers').update({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, is_active: values.is_active }).eq('id', editing.id);
+        const { error } = await supabase.from('workers').update({ nama: values.nama, jabatan: values.jabatan, departemen: values.departemen }).eq('id', editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('workers').insert({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, is_active: values.is_active });
+        const { error } = await supabase.from('workers').insert({ sid: values.sid, nama: values.nama, jabatan: values.jabatan, departemen: values.departemen, is_active: false });
         if (error) throw error;
       }
     },
@@ -83,6 +85,14 @@ export default function Workers() {
     onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
   });
 
+  const downloadTemplate = () => {
+    const csv = 'sid,nama,jabatan,departemen\nSID-2024-001,Budi Santoso,Mekanik,Maintenance';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'template_pekerja.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -90,25 +100,68 @@ export default function Workers() {
     const lines = text.split('\n').filter(l => l.trim());
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
     const rows: TablesInsert<'workers'>[] = [];
+    const errors: string[] = [];
+
+    // Get existing SIDs for duplicate check
+    const existingSids = new Set(workers.map(w => w.sid.toLowerCase()));
+
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',').map(c => c.trim());
       const row: any = {};
       headers.forEach((h, idx) => { row[h] = cols[idx]; });
-      if (row.sid && row.nama && row.jabatan && row.departemen) {
-        rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen });
+      if (!row.sid || !row.nama || !row.jabatan || !row.departemen) {
+        errors.push(`Baris ${i + 1}: Data tidak lengkap (sid, nama, jabatan, departemen wajib diisi)`);
+        continue;
       }
+      if (existingSids.has(row.sid.toLowerCase())) {
+        errors.push(`Baris ${i + 1}: SID sudah terdaftar`);
+        continue;
+      }
+      if (!JABATAN_OPTIONS.includes(row.jabatan)) {
+        errors.push(`Baris ${i + 1}: Jabatan tidak terdaftar (${row.jabatan})`);
+        continue;
+      }
+      if (!DEPT_OPTIONS.includes(row.departemen)) {
+        errors.push(`Baris ${i + 1}: Departemen tidak terdaftar (${row.departemen})`);
+        continue;
+      }
+      rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, is_active: false });
     }
-    if (rows.length === 0) { toast({ title: 'CSV kosong atau format salah', variant: 'destructive' }); return; }
-    const { error } = await supabase.from('workers').insert(rows);
-    if (error) { toast({ title: 'Error import', description: error.message, variant: 'destructive' }); return; }
+
+    if (errors.length > 0) {
+      toast({ title: 'Error Import', description: errors.join('\n'), variant: 'destructive' });
+      e.target.value = '';
+      return;
+    }
+
+    if (rows.length === 0) { toast({ title: 'Error Import', description: 'CSV kosong atau format salah', variant: 'destructive' }); e.target.value = ''; return; }
+
+    // Insert one by one with progress
+    setImportProgress({ current: 0, total: rows.length });
+    let successCount = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const { error } = await supabase.from('workers').insert(rows[i]);
+      if (error) {
+        errors.push(`Baris ${i + 2}: ${error.message}`);
+      } else {
+        successCount++;
+      }
+      setImportProgress({ current: i + 1, total: rows.length });
+    }
+    setImportProgress(null);
+
+    if (errors.length > 0) {
+      toast({ title: 'Error Import', description: `${successCount} berhasil, ${errors.length} gagal:\n${errors.join('\n')}`, variant: 'destructive' });
+    } else {
+      toast({ title: `${successCount} pekerja diimport` });
+    }
     qc.invalidateQueries({ queryKey: ['workers'] });
-    toast({ title: `${rows.length} pekerja diimport` });
     e.target.value = '';
   };
 
   const openEdit = (w: Worker) => {
     setEditing(w);
-    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen, is_active: w.is_active });
+    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen });
     setDialogOpen(true);
   };
 
@@ -147,13 +200,24 @@ export default function Workers() {
             </Select>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={downloadTemplate}><Download className="mr-1 h-4 w-4" />Template CSV</Button>
             <label>
-              <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
-              <Button variant="outline" size="sm" asChild><span><Upload className="mr-1 h-4 w-4" />Import CSV</span></Button>
+              <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} disabled={!!importProgress} />
+              <Button variant="outline" size="sm" asChild disabled={!!importProgress}><span><Upload className="mr-1 h-4 w-4" />Import CSV</span></Button>
             </label>
             <Button size="sm" onClick={openAdd}><Plus className="mr-1 h-4 w-4" />Tambah Pekerja</Button>
           </div>
         </div>
+
+        {importProgress && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>Mengimport pekerja...</span>
+              <span>{importProgress.current}/{importProgress.total}</span>
+            </div>
+            <Progress value={(importProgress.current / importProgress.total) * 100} className="h-2" />
+          </div>
+        )}
 
         <Card>
           <CardContent className="p-0">
@@ -215,36 +279,36 @@ export default function Workers() {
             <DialogDescription>{editing ? 'Perbarui data pekerja.' : 'Isi data pekerja baru.'}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2"><Label>SID</Label><Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" /></div>
-            <div className="grid gap-2"><Label>Nama</Label><Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} /></div>
+            {!editing && (
+              <div className="grid gap-2">
+                <Label>SID <span className="text-destructive">*</span></Label>
+                <Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" maxLength={100} />
+                <p className="text-xs text-muted-foreground">Wajib diisi. Maks. 100 karakter. Tidak dapat diubah setelah disimpan.</p>
+              </div>
+            )}
             <div className="grid gap-2">
-              <Label>Jabatan</Label>
+              <Label>Nama <span className="text-destructive">*</span></Label>
+              <Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} maxLength={100} />
+              <p className="text-xs text-muted-foreground">Wajib diisi. Maks. 100 karakter.</p>
+            </div>
+            <div className="grid gap-2">
+              <Label>Jabatan <span className="text-destructive">*</span></Label>
               <Select value={form.jabatan} onValueChange={v => setForm({ ...form, jabatan: v })}>
                 <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
                 <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Departemen</Label>
+              <Label>Departemen <span className="text-destructive">*</span></Label>
               <Select value={form.departemen} onValueChange={v => setForm({ ...form, departemen: v })}>
                 <SelectTrigger><SelectValue placeholder="Pilih departemen" /></SelectTrigger>
                 <SelectContent>{DEPT_OPTIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
-              <Label>Status</Label>
-              <Select value={form.is_active ? 'active' : 'inactive'} onValueChange={v => setForm({ ...form, is_active: v === 'active' })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Aktif</SelectItem>
-                  <SelectItem value="inactive">Tidak Aktif</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Batal</Button>
-            <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending || !form.sid || !form.nama || !form.jabatan || !form.departemen}>
+            <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending || (!editing && !form.sid) || !form.nama || !form.jabatan || !form.departemen}>
               {saveMutation.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
               Simpan
             </Button>

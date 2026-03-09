@@ -495,13 +495,36 @@ export default function SupervisorValidation() {
                   <div className="grid gap-3">
                     <div className="grid gap-2">
                       <Label className="text-sm">Revisi SID (Opsional)</Label>
-                      <Select value={reviseSid} onValueChange={setReviseSid}>
-                        <SelectTrigger><SelectValue placeholder="Pilih pekerja untuk revisi..." /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Tidak ada revisi</SelectItem>
-                          {allWorkers.map((w: any) => <SelectItem key={w.id} value={w.id}>{w.sid} - {w.nama}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={sidPopoverOpen} onOpenChange={setSidPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" role="combobox" aria-expanded={sidPopoverOpen} className="w-full justify-between font-normal">
+                            {reviseSid && reviseSid !== '__none__'
+                              ? (() => { const w = allWorkers.find((w: any) => w.id === reviseSid); return w ? `${w.sid} - ${w.nama}` : 'Pilih pekerja...'; })()
+                              : 'Tidak ada revisi'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[400px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Cari SID atau Nama..." />
+                            <CommandList>
+                              <CommandEmpty>Tidak ditemukan</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem value="__none__" onSelect={() => { setReviseSid('__none__'); setSidPopoverOpen(false); }}>
+                                  <Check className={cn("mr-2 h-4 w-4", reviseSid === '__none__' ? "opacity-100" : "opacity-0")} />
+                                  Tidak ada revisi
+                                </CommandItem>
+                                {allWorkers.map((w: any) => (
+                                  <CommandItem key={w.id} value={`${w.sid} ${w.nama}`} onSelect={() => { setReviseSid(w.id); setSidPopoverOpen(false); }}>
+                                    <Check className={cn("mr-2 h-4 w-4", reviseSid === w.id ? "opacity-100" : "opacity-0")} />
+                                    {w.sid} - {w.nama}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-sm">Status</Label>
