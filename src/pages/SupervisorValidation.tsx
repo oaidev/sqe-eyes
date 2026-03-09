@@ -94,6 +94,7 @@ export default function SupervisorValidation() {
   const [alasanText, setAlasanText] = useState('');
   const [reviseSid, setReviseSid] = useState('__none__');
   const [jenisPelanggaran, setJenisPelanggaran] = useState('APD_TIDAK_LENGKAP');
+  const [sidPopoverOpen, setSidPopoverOpen] = useState(false);
 
   const { data: operatorValidations = [] } = useQuery({
     queryKey: ['all-validations'],
