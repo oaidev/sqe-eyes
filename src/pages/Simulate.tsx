@@ -213,7 +213,7 @@ export default function Simulate() {
         if (detecting) return;
         if (videoEl === videoRef.current && videoEl.paused) return;
         const b = captureFrame(videoEl);
-        if (b) runDetection(b);
+        if (b) checkOffTimeAndRun(b);
       }, autoCaptureInterval * 1000);
     } else {
       if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
