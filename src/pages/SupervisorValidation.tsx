@@ -260,14 +260,25 @@ export default function SupervisorValidation() {
     <AppLayout title="Validasi Supervisor">
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Event Tervalidasi</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Final Supervisor</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{supervisorValidations.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Alert Tervalidasi</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Final Supervisor</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{filtered.filter(e => { const alert = e.alerts?.[0]; if (!alert) return false; const sup = supValidationMap[alert.id]; return sup?.status === 'VALID' || sup?.status === 'TIDAK_VALID'; }).length}</div></CardContent></Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-[150px]" />
+          <Input type="date" value={dateFrom} onChange={e => {
+            const val = e.target.value;
+            setDateFrom(val);
+            if (dateTo < val) setDateTo(val);
+          }} className="w-[150px]" />
           <span className="text-sm text-muted-foreground">—</span>
-          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-[150px]" />
+          <Input type="date" value={dateTo} onChange={e => {
+            const val = e.target.value;
+            if (val < dateFrom) {
+              toast({ title: 'Tanggal akhir harus sama atau lebih besar dari tanggal awal', variant: 'destructive' });
+              return;
+            }
+            setDateTo(val);
+          }} className="w-[150px]" />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Cari SID/Nama..." value={searchSid} onChange={e => setSearchSid(e.target.value)} className="pl-8 w-[160px]" />
@@ -315,7 +326,7 @@ export default function SupervisorValidation() {
                 {isLoading ? (
                   <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Belum ada event yang tervalidasi operator</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Tidak ada alert</TableCell></TableRow>
                 ) : filtered.map(e => {
                   const alert = e.alerts?.[0];
                   const opVal = alert ? opValidationMap[alert.id] : null;
@@ -345,7 +356,7 @@ export default function SupervisorValidation() {
       <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detail & Validasi Final</DialogTitle>
+            <DialogTitle>Detail Alert & Validasi Final</DialogTitle>
             <DialogDescription>Validasi final supervisor jika diperlukan</DialogDescription>
           </DialogHeader>
           {selectedEvent && (
