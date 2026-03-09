@@ -69,10 +69,21 @@ export default function Simulate() {
   const { data: cameras = [] } = useQuery({
     queryKey: ['cameras-for-simulate'],
     queryFn: async () => {
-      const { data } = await supabase.from('cameras').select('id, name, zone_id, jenis_pelanggaran, zones(name)').eq('is_active', true).order('name');
+      const { data } = await supabase.from('cameras').select('id, name, zone_id, jenis_pelanggaran, off_time_start, off_time_end, zones(name)').eq('is_active', true).order('name');
       return data || [];
     },
   });
+
+  const isInOffTime = useCallback((cam: any): boolean => {
+    if (cam?.jenis_pelanggaran !== 'KELUAR_TANPA_IZIN') return false;
+    if (!cam?.off_time_start || !cam?.off_time_end) return false;
+    const now = new Date();
+    const nowHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const start = cam.off_time_start.substring(0, 5); // "HH:MM"
+    const end = cam.off_time_end.substring(0, 5);
+    if (start <= end) return nowHHMM >= start && nowHHMM <= end;
+    return nowHHMM >= start || nowHHMM <= end; // overnight
+  }, []);
 
   useEffect(() => {
     if (webcamActive && webcamVideoRef.current && webcamStreamRef.current) {
@@ -165,8 +176,17 @@ export default function Simulate() {
     } finally { setDetecting(false); }
   }, [selectedCameraId]);
 
-  const handleWebcamCapture = () => { if (!webcamVideoRef.current) return; const b = captureFrame(webcamVideoRef.current); if (b) runDetection(b); };
-  const handleVideoCapture = () => { if (!videoRef.current) return; const b = captureFrame(videoRef.current); if (b) runDetection(b); };
+  const checkOffTimeAndRun = useCallback((imageBase64: string) => {
+    const cam = cameras.find((c: any) => c.id === selectedCameraId);
+    if (isInOffTime(cam)) {
+      toast.info(`Kamera sedang dalam waktu off (${cam.off_time_start?.substring(0,5)} - ${cam.off_time_end?.substring(0,5)}), deteksi dilewati`);
+      return;
+    }
+    runDetection(imageBase64);
+  }, [selectedCameraId, cameras, isInOffTime, runDetection]);
+
+  const handleWebcamCapture = () => { if (!webcamVideoRef.current) return; const b = captureFrame(webcamVideoRef.current); if (b) checkOffTimeAndRun(b); };
+  const handleVideoCapture = () => { if (!videoRef.current) return; const b = captureFrame(videoRef.current); if (b) checkOffTimeAndRun(b); };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -176,7 +196,7 @@ export default function Simulate() {
     reader.readAsDataURL(file);
   };
 
-  const handleImageDetect = () => { if (!uploadedImage) return; runDetection(uploadedImage.split(',')[1]); };
+  const handleImageDetect = () => { if (!uploadedImage) return; checkOffTimeAndRun(uploadedImage.split(',')[1]); };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -193,13 +213,13 @@ export default function Simulate() {
         if (detecting) return;
         if (videoEl === videoRef.current && videoEl.paused) return;
         const b = captureFrame(videoEl);
-        if (b) runDetection(b);
+        if (b) checkOffTimeAndRun(b);
       }, autoCaptureInterval * 1000);
     } else {
       if (autoCaptureRef.current) { clearInterval(autoCaptureRef.current); autoCaptureRef.current = null; }
     }
     return () => { if (autoCaptureRef.current) clearInterval(autoCaptureRef.current); };
-  }, [autoCapture, captureMode, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, runDetection]);
+  }, [autoCapture, captureMode, autoCaptureInterval, webcamActive, videoSrc, detecting, captureFrame, checkOffTimeAndRun]);
 
   // Smart (motion-based) auto capture
   useEffect(() => {
@@ -213,7 +233,7 @@ export default function Simulate() {
         setMotionDetected(hasMotion);
         if (hasMotion) {
           const b = captureFrame(videoEl);
-          if (b) runDetection(b);
+          if (b) checkOffTimeAndRun(b);
         }
       }, 1000); // Check every 1s
     } else {
@@ -221,7 +241,7 @@ export default function Simulate() {
       setMotionDetected(false);
     }
     return () => { if (smartCaptureRef.current) clearInterval(smartCaptureRef.current); };
-  }, [autoCapture, captureMode, webcamActive, videoSrc, detecting, captureFrame, runDetection, detectMotion]);
+  }, [autoCapture, captureMode, webcamActive, videoSrc, detecting, captureFrame, checkOffTimeAndRun, detectMotion]);
 
   const selectedCamera = cameras.find((c: any) => c.id === selectedCameraId);
 

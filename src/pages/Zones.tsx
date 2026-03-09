@@ -40,6 +40,7 @@ export default function Zones() {
   const [camDialog, setCamDialog] = useState(false);
   const [editingCam, setEditingCam] = useState<CameraRow | null>(null);
   const [camForm, setCamForm] = useState<{ name: string; rtsp_url: string; jenis_pelanggaran: string; zone_id: string; off_time_start: string; off_time_end: string }>({ name: '', rtsp_url: '', jenis_pelanggaran: 'APD_TIDAK_LENGKAP', zone_id: '', off_time_start: '', off_time_end: '' });
+  const [offTimeEnabled, setOffTimeEnabled] = useState(false);
   const [deleteZone, setDeleteZone] = useState<Zone | null>(null);
   const [deleteCam, setDeleteCam] = useState<CameraRow | null>(null);
 
@@ -158,6 +159,7 @@ export default function Zones() {
       off_time_start: (cam as any)?.off_time_start || '',
       off_time_end: (cam as any)?.off_time_end || '',
     });
+    setOffTimeEnabled(!!(cam as any)?.off_time_start);
     const camRules = ppeRules.filter((r: any) => r.camera_id === cam?.id);
     const gen: PpeMatrix = {};
     const jabMap = new Map<string, PpeMatrix>();
@@ -340,11 +342,19 @@ export default function Zones() {
             {/* Conditional: Waktu Kamera Off for Keluar Tanpa Izin */}
             {camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' && (
               <div className="border-t pt-3">
-                <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
-                <div className="grid grid-cols-2 gap-4 mt-2">
-                  <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+                <div className="flex items-center justify-between">
+                  <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
+                  <Switch checked={offTimeEnabled} onCheckedChange={v => {
+                    setOffTimeEnabled(v);
+                    if (!v) setCamForm({ ...camForm, off_time_start: '', off_time_end: '' });
+                  }} />
                 </div>
+                {offTimeEnabled && (
+                  <div className="grid grid-cols-2 gap-4 mt-2">
+                    <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+                  </div>
+                )}
               </div>
             )}
           </div>
