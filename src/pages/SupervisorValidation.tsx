@@ -326,7 +326,7 @@ export default function SupervisorValidation() {
                 {isLoading ? (
                   <TableRow><TableCell colSpan={7} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Belum ada event yang tervalidasi operator</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Tidak ada alert</TableCell></TableRow>
                 ) : filtered.map(e => {
                   const alert = e.alerts?.[0];
                   const opVal = alert ? opValidationMap[alert.id] : null;
