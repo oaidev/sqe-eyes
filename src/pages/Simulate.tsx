@@ -428,7 +428,17 @@ export default function Simulate() {
                 imageSrc={lastCapturedImage}
                 persons={results
                   .filter(r => r.timestamp.getTime() === results[0]?.timestamp.getTime())
-                  .map(r => {
+                .map(r => {
+                    const isKeluarZona = r.jenisPelanggaran === 'KELUAR_TANPA_IZIN';
+                    if (isKeluarZona) {
+                      return {
+                        boundingBox: r.boundingBox,
+                        workerName: r.worker?.nama || null,
+                        hasViolation: r.alert_created,
+                        ppeStatus: r.alert_created ? 'Keluar Tanpa Izin' : 'Izin Keluar',
+                        personIndex: r.personIndex,
+                      };
+                    }
                     const hasPpeViolation = Object.values(r.ppe_results).some(v => !v.detected);
                     const ppeItems = Object.entries(r.ppe_results)
                       .map(([k, v]) => `${ppeLabel[k] || k} ${v.detected ? '✓' : '✗'}`)
