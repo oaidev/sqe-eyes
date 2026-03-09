@@ -73,7 +73,10 @@ export default function Workers() {
       setDialogOpen(false); setEditing(null); setForm(emptyForm);
       toast({ title: editing ? 'Pekerja diperbarui' : 'Pekerja ditambahkan' });
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => {
+      const msg = e.message?.includes('duplicate key') || e.message?.includes('unique constraint') ? 'SID sudah terdaftar' : e.message;
+      toast({ title: 'Error', description: msg, variant: 'destructive' });
+    },
   });
 
   const deleteMutation = useMutation({
@@ -125,6 +128,10 @@ export default function Workers() {
         errors.push(`Baris ${i + 1}: Departemen tidak terdaftar (${row.departemen})`);
         continue;
       }
+      if (row.nama.length > 100) {
+        errors.push(`Baris ${i + 1}: Nama harus kurang dari 100 karakter`);
+        continue;
+      }
       rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, is_active: false });
     }
 
@@ -142,7 +149,8 @@ export default function Workers() {
     for (let i = 0; i < rows.length; i++) {
       const { error } = await supabase.from('workers').insert(rows[i]);
       if (error) {
-        errors.push(`Baris ${i + 2}: ${error.message}`);
+        const msg = error.message?.includes('duplicate key') || error.message?.includes('unique constraint') ? 'SID sudah terdaftar' : error.message;
+        errors.push(`Baris ${i + 2}: ${msg}`);
       } else {
         successCount++;
       }
@@ -283,13 +291,13 @@ export default function Workers() {
               <div className="grid gap-2">
                 <Label>SID <span className="text-destructive">*</span></Label>
                 <Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" maxLength={100} />
-                <p className="text-xs text-muted-foreground">Wajib diisi. Maks. 100 karakter. Tidak dapat diubah setelah disimpan.</p>
+                <p className="text-xs text-muted-foreground text-right">{form.sid.length}/100</p>
               </div>
             )}
             <div className="grid gap-2">
               <Label>Nama <span className="text-destructive">*</span></Label>
               <Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} maxLength={100} />
-              <p className="text-xs text-muted-foreground">Wajib diisi. Maks. 100 karakter.</p>
+              <p className="text-xs text-muted-foreground text-right">{form.nama.length}/100</p>
             </div>
             <div className="grid gap-2">
               <Label>Jabatan <span className="text-destructive">*</span></Label>
