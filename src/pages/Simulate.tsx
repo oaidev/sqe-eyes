@@ -176,8 +176,17 @@ export default function Simulate() {
     } finally { setDetecting(false); }
   }, [selectedCameraId]);
 
-  const handleWebcamCapture = () => { if (!webcamVideoRef.current) return; const b = captureFrame(webcamVideoRef.current); if (b) runDetection(b); };
-  const handleVideoCapture = () => { if (!videoRef.current) return; const b = captureFrame(videoRef.current); if (b) runDetection(b); };
+  const checkOffTimeAndRun = useCallback((imageBase64: string) => {
+    const cam = cameras.find((c: any) => c.id === selectedCameraId);
+    if (isInOffTime(cam)) {
+      toast.info(`Kamera sedang dalam waktu off (${cam.off_time_start?.substring(0,5)} - ${cam.off_time_end?.substring(0,5)}), deteksi dilewati`);
+      return;
+    }
+    runDetection(imageBase64);
+  }, [selectedCameraId, cameras, isInOffTime, runDetection]);
+
+  const handleWebcamCapture = () => { if (!webcamVideoRef.current) return; const b = captureFrame(webcamVideoRef.current); if (b) checkOffTimeAndRun(b); };
+  const handleVideoCapture = () => { if (!videoRef.current) return; const b = captureFrame(videoRef.current); if (b) checkOffTimeAndRun(b); };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
