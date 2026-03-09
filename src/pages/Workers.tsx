@@ -128,6 +128,10 @@ export default function Workers() {
         errors.push(`Baris ${i + 1}: Departemen tidak terdaftar (${row.departemen})`);
         continue;
       }
+      if (row.nama.length > 100) {
+        errors.push(`Baris ${i + 1}: Nama harus kurang dari 100 karakter`);
+        continue;
+      }
       rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, is_active: false });
     }
 
