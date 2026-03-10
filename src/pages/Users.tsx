@@ -168,7 +168,7 @@ export default function Users() {
               <p className="text-xs text-muted-foreground text-right">{inviteFullName.length}/100</p>
             </div>
             <div className="space-y-2">
-              <Label>Role</Label>
+              <Label>Role <span className="text-destructive">*</span></Label>
               <Select value={inviteRole} onValueChange={v => setInviteRole(v as AppRole)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
