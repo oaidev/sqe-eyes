@@ -161,8 +161,12 @@ export default function Users() {
         <DialogContent>
           <DialogHeader><DialogTitle>Invite User Baru</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2"><Label>Email</Label><Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" /></div>
-            <div className="space-y-2"><Label>Nama Lengkap (opsional)</Label><Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} /></div>
+            <div className="space-y-2"><Label>Email <span className="text-destructive">*</span></Label><Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" /></div>
+            <div className="space-y-2">
+              <Label>Nama Lengkap <span className="text-destructive">*</span></Label>
+              <Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} maxLength={100} />
+              <p className="text-xs text-muted-foreground text-right">{inviteFullName.length}/100</p>
+            </div>
             <div className="space-y-2">
               <Label>Role</Label>
               <Select value={inviteRole} onValueChange={v => setInviteRole(v as AppRole)}>
