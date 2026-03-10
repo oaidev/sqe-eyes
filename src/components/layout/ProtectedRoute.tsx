@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { type PageKey, canAccess } from '@/lib/permissions';
+import { usePermissions, type PageKey } from '@/hooks/usePermissions';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 
 interface ProtectedRouteProps {
@@ -9,15 +9,16 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ page, children }: ProtectedRouteProps) {
-  const { user, userRole, loading } = useAuth();
+  const { user, loading } = useAuth();
+  const { canView, isLoading } = usePermissions();
 
-  if (loading) return <LoadingScreen />;
+  if (loading || isLoading) return <LoadingScreen />;
 
   if (!user) {
     return <Navigate to="/auth" replace />;
   }
 
-  if (!canAccess(userRole, page)) {
+  if (!canView(page)) {
     return <Navigate to="/" replace />;
   }
 

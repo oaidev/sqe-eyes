@@ -1,4 +1,5 @@
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions, type PageKey } from '@/hooks/usePermissions';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -10,57 +11,54 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
-type AppRole = 'admin' | 'operator' | 'supervisor';
-
 interface NavItem {
   title: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
-  roles: AppRole[];
+  pageKey: PageKey;
 }
 
 const navItems: { group: string; items: NavItem[] }[] = [
   {
     group: 'Umum',
     items: [
-      { title: 'Dashboard', url: '/', icon: LayoutDashboard, roles: ['admin', 'operator', 'supervisor'] },
+      { title: 'Dashboard', url: '/', icon: LayoutDashboard, pageKey: 'dashboard' },
     ],
   },
   {
     group: 'Admin — Konfigurasi',
     items: [
-      { title: 'Kelola Pekerja', url: '/workers', icon: Users, roles: ['admin'] },
-      { title: 'Zona & Kamera', url: '/zones', icon: MapPin, roles: ['admin'] },
-      { title: 'Kelola Pengguna', url: '/users', icon: Shield, roles: ['admin'] },
-      { title: 'Kelola Role', url: '/roles', icon: KeyRound, roles: ['admin'] },
-      { title: 'Simulasi Deteksi', url: '/simulate', icon: ScanSearch, roles: ['admin'] },
+      { title: 'Kelola Pekerja', url: '/workers', icon: Users, pageKey: 'workers' },
+      { title: 'Zona & Kamera', url: '/zones', icon: MapPin, pageKey: 'zones' },
+      { title: 'Kelola Pengguna', url: '/users', icon: Shield, pageKey: 'users' },
+      { title: 'Kelola Role', url: '/roles', icon: KeyRound, pageKey: 'roles' },
+      { title: 'Simulasi Deteksi', url: '/simulate', icon: ScanSearch, pageKey: 'simulate' },
     ],
   },
   {
     group: 'Operator — Monitoring',
     items: [
-      { title: 'Validasi Operator', url: '/operator-validation', icon: ClipboardCheck, roles: ['admin', 'operator'] },
+      { title: 'Validasi Operator', url: '/operator-validation', icon: ClipboardCheck, pageKey: 'operator-validation' },
     ],
   },
   {
     group: 'Supervisor',
     items: [
-      { title: 'Validasi Supervisor', url: '/supervisor-validation', icon: ClipboardCheck, roles: ['admin', 'supervisor'] },
+      { title: 'Validasi Supervisor', url: '/supervisor-validation', icon: ClipboardCheck, pageKey: 'supervisor-validation' },
     ],
   },
 ];
 
 export function AppSidebar() {
   const { user, userRole, signOut } = useAuth();
+  const { canView } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
   const filteredNav = navItems
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) =>
-        !userRole ? true : item.roles.includes(userRole)
-      ),
+      items: group.items.filter((item) => canView(item.pageKey)),
     }))
     .filter((group) => group.items.length > 0);
 
