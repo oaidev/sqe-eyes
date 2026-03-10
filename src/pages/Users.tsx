@@ -177,7 +177,7 @@ export default function Users() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Batal</Button>
-            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || inviteMutation.isPending}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
+            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || !inviteFullName || inviteMutation.isPending}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

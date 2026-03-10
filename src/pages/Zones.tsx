@@ -376,7 +376,7 @@ export default function Zones() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCamDialog(false)}>Batal</Button>
-            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name}>Simpan</Button>
+            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name || !camForm.rtsp_url}>Simpan</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

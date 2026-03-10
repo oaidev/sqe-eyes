@@ -132,8 +132,16 @@ export default function Roles() {
                       <div key={page.key} className="grid grid-cols-[1fr,80px,80px,80px] gap-2 items-center py-1">
                         <span className="text-sm">{page.label}</span>
                         <div className="flex justify-center"><Switch checked={perm.can_view} onCheckedChange={() => togglePerm(role, page.key, 'can_view')} /></div>
-                        <div className="flex justify-center"><Switch checked={perm.can_edit} onCheckedChange={() => togglePerm(role, page.key, 'can_edit')} /></div>
-                        <div className="flex justify-center"><Switch checked={perm.can_delete} onCheckedChange={() => togglePerm(role, page.key, 'can_delete')} /></div>
+                        <div className="flex justify-center">
+                          {PAGE_TOGGLE_CONFIG[page.key]?.edit !== false
+                            ? <Switch checked={perm.can_edit} onCheckedChange={() => togglePerm(role, page.key, 'can_edit')} />
+                            : <span className="text-muted-foreground">—</span>}
+                        </div>
+                        <div className="flex justify-center">
+                          {PAGE_TOGGLE_CONFIG[page.key]?.delete !== false
+                            ? <Switch checked={perm.can_delete} onCheckedChange={() => togglePerm(role, page.key, 'can_delete')} />
+                            : <span className="text-muted-foreground">—</span>}
+                        </div>
                       </div>
                     );
                   })}

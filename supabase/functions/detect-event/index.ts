@@ -357,7 +357,7 @@ Deno.serve(async (req) => {
         const applicableRules = zoneRules.filter((rule) => {
           if (!rule.jabatan) return true;
           if (person.workerInfo && rule.jabatan === person.workerInfo.jabatan) return true;
-          if (!person.workerInfo) return true;
+          if (!person.workerInfo) return !rule.jabatan;
           return false;
         });
 
