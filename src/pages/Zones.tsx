@@ -280,8 +280,16 @@ export default function Zones() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan konfigurasi deteksi.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2"><Label>Nama Kamera</Label><Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>RTSP URL</Label><Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." /></div>
+            <div className="grid gap-2">
+              <Label>Nama Kamera <span className="text-destructive">*</span></Label>
+              <Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} maxLength={100} />
+              <p className="text-xs text-muted-foreground text-right">{camForm.name.length}/100</p>
+            </div>
+            <div className="grid gap-2">
+              <Label>RTSP URL <span className="text-destructive">*</span></Label>
+              <Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." maxLength={500} />
+              <p className="text-xs text-muted-foreground text-right">{camForm.rtsp_url.length}/500</p>
+            </div>
             <div className="grid gap-2">
               <Label>Jenis Pelanggaran yang Dideteksi</Label>
               <Select value={camForm.jenis_pelanggaran} onValueChange={v => setCamForm({ ...camForm, jenis_pelanggaran: v })}>
