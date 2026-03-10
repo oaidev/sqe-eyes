@@ -14,6 +14,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Plus, Search, Upload, Download, Pencil, Trash2, Loader2, Camera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { EnrollFaceDialog } from '@/components/workers/EnrollFaceDialog';
+import { usePermissions } from '@/hooks/usePermissions';
+import { REGEX_NAME, REGEX_SID, validateField } from '@/lib/validation';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
 
 type Worker = Tables<'workers'>;
@@ -27,6 +29,10 @@ const emptyForm: FormState = { sid: '', nama: '', jabatan: '', departemen: '' };
 export default function Workers() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { canEdit, canDelete } = usePermissions();
+  const hasEdit = canEdit('workers');
+  const hasDelete = canDelete('workers');
+
   const [search, setSearch] = useState('');
   const [filterDept, setFilterDept] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -37,6 +43,9 @@ export default function Workers() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [enrollWorker, setEnrollWorker] = useState<Worker | null>(null);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
+
+  const namaValid = validateField(form.nama, REGEX_NAME);
+  const sidValid = validateField(form.sid, REGEX_SID);
 
   const { data: workers = [], isLoading } = useQuery({
     queryKey: ['workers'],
@@ -104,75 +113,40 @@ export default function Workers() {
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
     const rows: TablesInsert<'workers'>[] = [];
     const errors: string[] = [];
-
-    // Get existing SIDs for duplicate check
     const existingSids = new Set(workers.map(w => w.sid.toLowerCase()));
 
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',').map(c => c.trim());
       const row: any = {};
       headers.forEach((h, idx) => { row[h] = cols[idx]; });
-      if (!row.sid || !row.nama || !row.jabatan || !row.departemen) {
-        errors.push(`Baris ${i + 1}: Data tidak lengkap (sid, nama, jabatan, departemen wajib diisi)`);
-        continue;
-      }
-      if (existingSids.has(row.sid.toLowerCase())) {
-        errors.push(`Baris ${i + 1}: SID sudah terdaftar`);
-        continue;
-      }
-      if (!JABATAN_OPTIONS.includes(row.jabatan)) {
-        errors.push(`Baris ${i + 1}: Jabatan tidak terdaftar (${row.jabatan})`);
-        continue;
-      }
-      if (!DEPT_OPTIONS.includes(row.departemen)) {
-        errors.push(`Baris ${i + 1}: Departemen tidak terdaftar (${row.departemen})`);
-        continue;
-      }
-      if (row.nama.length > 100) {
-        errors.push(`Baris ${i + 1}: Nama harus kurang dari 100 karakter`);
-        continue;
-      }
+      if (!row.sid || !row.nama || !row.jabatan || !row.departemen) { errors.push(`Baris ${i + 1}: Data tidak lengkap`); continue; }
+      if (!validateField(row.nama, REGEX_NAME)) { errors.push(`Baris ${i + 1}: Nama hanya boleh mengandung huruf`); continue; }
+      if (!validateField(row.sid, REGEX_SID)) { errors.push(`Baris ${i + 1}: SID tidak valid`); continue; }
+      if (existingSids.has(row.sid.toLowerCase())) { errors.push(`Baris ${i + 1}: SID sudah terdaftar`); continue; }
+      if (!JABATAN_OPTIONS.includes(row.jabatan)) { errors.push(`Baris ${i + 1}: Jabatan tidak terdaftar (${row.jabatan})`); continue; }
+      if (!DEPT_OPTIONS.includes(row.departemen)) { errors.push(`Baris ${i + 1}: Departemen tidak terdaftar (${row.departemen})`); continue; }
+      if (row.nama.length > 100) { errors.push(`Baris ${i + 1}: Nama harus kurang dari 100 karakter`); continue; }
       rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, is_active: false });
     }
 
-    if (errors.length > 0) {
-      toast({ title: 'Error Import', description: errors.join('\n'), variant: 'destructive' });
-      e.target.value = '';
-      return;
-    }
-
+    if (errors.length > 0) { toast({ title: 'Error Import', description: errors.join('\n'), variant: 'destructive' }); e.target.value = ''; return; }
     if (rows.length === 0) { toast({ title: 'Error Import', description: 'CSV kosong atau format salah', variant: 'destructive' }); e.target.value = ''; return; }
 
-    // Insert one by one with progress
     setImportProgress({ current: 0, total: rows.length });
     let successCount = 0;
     for (let i = 0; i < rows.length; i++) {
       const { error } = await supabase.from('workers').insert(rows[i]);
-      if (error) {
-        const msg = error.message?.includes('duplicate key') || error.message?.includes('unique constraint') ? 'SID sudah terdaftar' : error.message;
-        errors.push(`Baris ${i + 2}: ${msg}`);
-      } else {
-        successCount++;
-      }
+      if (error) { errors.push(`Baris ${i + 2}: ${error.message}`); } else { successCount++; }
       setImportProgress({ current: i + 1, total: rows.length });
     }
     setImportProgress(null);
-
-    if (errors.length > 0) {
-      toast({ title: 'Error Import', description: `${successCount} berhasil, ${errors.length} gagal:\n${errors.join('\n')}`, variant: 'destructive' });
-    } else {
-      toast({ title: `${successCount} pekerja diimport` });
-    }
+    if (errors.length > 0) { toast({ title: 'Error Import', description: `${successCount} berhasil, ${errors.length} gagal`, variant: 'destructive' }); }
+    else { toast({ title: `${successCount} pekerja diimport` }); }
     qc.invalidateQueries({ queryKey: ['workers'] });
     e.target.value = '';
   };
 
-  const openEdit = (w: Worker) => {
-    setEditing(w);
-    setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen });
-    setDialogOpen(true);
-  };
-
+  const openEdit = (w: Worker) => { setEditing(w); setForm({ sid: w.sid, nama: w.nama, jabatan: w.jabatan, departemen: w.departemen }); setDialogOpen(true); };
   const openAdd = () => { setEditing(null); setForm(emptyForm); setDialogOpen(true); };
 
   const filtered = workers.filter(w => {
@@ -181,6 +155,8 @@ export default function Workers() {
     const matchStatus = filterStatus === 'all' || (filterStatus === 'active' ? w.is_active : !w.is_active);
     return matchSearch && matchDept && matchStatus;
   });
+
+  const formInvalid = saveMutation.isPending || (!editing && !form.sid) || !form.nama || !form.jabatan || !form.departemen || !namaValid || (!editing && !sidValid);
 
   return (
     <AppLayout title="Kelola Pekerja">
@@ -207,14 +183,16 @@ export default function Workers() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={downloadTemplate}><Download className="mr-1 h-4 w-4" />Template CSV</Button>
-            <label>
-              <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} disabled={!!importProgress} />
-              <Button variant="outline" size="sm" asChild disabled={!!importProgress}><span><Upload className="mr-1 h-4 w-4" />Import CSV</span></Button>
-            </label>
-            <Button size="sm" onClick={openAdd}><Plus className="mr-1 h-4 w-4" />Tambah Pekerja</Button>
-          </div>
+          {hasEdit && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={downloadTemplate}><Download className="mr-1 h-4 w-4" />Template CSV</Button>
+              <label>
+                <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} disabled={!!importProgress} />
+                <Button variant="outline" size="sm" asChild disabled={!!importProgress}><span><Upload className="mr-1 h-4 w-4" />Import CSV</span></Button>
+              </label>
+              <Button size="sm" onClick={openAdd}><Plus className="mr-1 h-4 w-4" />Tambah Pekerja</Button>
+            </div>
+          )}
         </div>
 
         {importProgress && (
@@ -237,7 +215,7 @@ export default function Workers() {
                   <TableHead>Jabatan</TableHead>
                   <TableHead>Departemen</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[80px]" />
+                  {(hasEdit || hasDelete) && <TableHead className="w-[80px]" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -263,13 +241,15 @@ export default function Workers() {
                       <TableCell>{w.jabatan}</TableCell>
                       <TableCell>{w.departemen}</TableCell>
                       <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? 'Aktif' : 'Tidak Aktif'}</Badge></TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEnrollWorker(w)} title="Daftarkan Wajah"><Camera className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </div>
-                      </TableCell>
+                      {(hasEdit || hasDelete) && (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEnrollWorker(w)} title="Daftarkan Wajah"><Camera className="h-3.5 w-3.5" /></Button>}
+                            {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>}
+                            {hasDelete && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -291,12 +271,14 @@ export default function Workers() {
               <div className="grid gap-2">
                 <Label>SID <span className="text-destructive">*</span></Label>
                 <Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" maxLength={100} />
+                {form.sid && !sidValid && <p className="text-xs text-destructive">SID hanya boleh mengandung huruf, angka, dan karakter - _ /</p>}
                 <p className="text-xs text-muted-foreground text-right">{form.sid.length}/100</p>
               </div>
             )}
             <div className="grid gap-2">
               <Label>Nama <span className="text-destructive">*</span></Label>
               <Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} maxLength={100} />
+              {form.nama && !namaValid && <p className="text-xs text-destructive">Nama hanya boleh mengandung huruf</p>}
               <p className="text-xs text-muted-foreground text-right">{form.nama.length}/100</p>
             </div>
             <div className="grid gap-2">
@@ -316,7 +298,7 @@ export default function Workers() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Batal</Button>
-            <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending || (!editing && !form.sid) || !form.nama || !form.jabatan || !form.departemen}>
+            <Button onClick={() => saveMutation.mutate(form)} disabled={formInvalid}>
               {saveMutation.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
               Simpan
             </Button>

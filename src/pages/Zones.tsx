@@ -14,6 +14,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Plus, Pencil, Trash2, Loader2, ChevronDown, Camera, MapPin } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { usePermissions } from '@/hooks/usePermissions';
+import { REGEX_ZONE_NAME, validateField } from '@/lib/validation';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Zone = Tables<'zones'>;
@@ -34,6 +36,10 @@ interface JabatanPpe { jabatan: string; ppe: PpeMatrix }
 export default function Zones() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { canEdit, canDelete } = usePermissions();
+  const hasEdit = canEdit('zones');
+  const hasDelete = canDelete('zones');
+
   const [zoneDialog, setZoneDialog] = useState(false);
   const [editingZone, setEditingZone] = useState<Zone | null>(null);
   const [zoneForm, setZoneForm] = useState({ name: '', description: '' });
@@ -47,6 +53,8 @@ export default function Zones() {
   const [generalPpe, setGeneralPpe] = useState<PpeMatrix>({});
   const [perJabatanEnabled, setPerJabatanEnabled] = useState(false);
   const [jabatanPpeList, setJabatanPpeList] = useState<JabatanPpe[]>([]);
+
+  const zoneNameValid = validateField(zoneForm.name, REGEX_ZONE_NAME);
 
   const { data: sites = [] } = useQuery({
     queryKey: ['sites'],
@@ -92,7 +100,6 @@ export default function Zones() {
   const saveCamMut = useMutation({
     mutationFn: async () => {
       let camId = editingCam?.id;
-      // Derive point_type from jenis_pelanggaran
       const pointType = camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'exit' : 'area';
       const camPayload: any = {
         name: camForm.name,
@@ -101,7 +108,6 @@ export default function Zones() {
         jenis_pelanggaran: camForm.jenis_pelanggaran,
         off_time_start: camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? (camForm.off_time_start || null) : null,
         off_time_end: camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? (camForm.off_time_end || null) : null,
-        
       };
       if (editingCam) {
         const { error } = await supabase.from('cameras').update(camPayload).eq('id', editingCam.id);
@@ -180,9 +186,11 @@ export default function Zones() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{zones.length} zona terdaftar</p>
-          <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '' }); setZoneDialog(true); }}>
-            <Plus className="mr-1 h-4 w-4" />Tambah Zona
-          </Button>
+          {hasEdit && (
+            <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '' }); setZoneDialog(true); }}>
+              <Plus className="mr-1 h-4 w-4" />Tambah Zona
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
@@ -203,12 +211,16 @@ export default function Zones() {
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant="outline"><Camera className="mr-1 h-3 w-3" />{zoneCams.length}</Badge>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '' }); setZoneDialog(true); }}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={e => { e.stopPropagation(); setDeleteZone(zone); }}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      {hasEdit && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={e => { e.stopPropagation(); setEditingZone(zone); setZoneForm({ name: zone.name, description: zone.description || '' }); setZoneDialog(true); }}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {hasDelete && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={e => { e.stopPropagation(); setDeleteZone(zone); }}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
@@ -217,28 +229,32 @@ export default function Zones() {
                   <div className="border-t px-4 pb-4 pt-2">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-muted-foreground uppercase">Kamera di zona ini</p>
-                      <Button variant="outline" size="sm" onClick={() => openCamDialog(zone.id)}>
-                        <Plus className="mr-1 h-3 w-3" />Tambah Kamera
-                      </Button>
+                      {hasEdit && (
+                        <Button variant="outline" size="sm" onClick={() => openCamDialog(zone.id)}>
+                          <Plus className="mr-1 h-3 w-3" />Tambah Kamera
+                        </Button>
+                      )}
                     </div>
                     {zoneCams.length === 0 ? (
                       <p className="text-sm text-muted-foreground py-2">Belum ada kamera</p>
                     ) : (
                       <Table>
-                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Jenis Pelanggaran</TableHead><TableHead>Aktif</TableHead><TableHead className="w-[60px]" /></TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Jenis Pelanggaran</TableHead><TableHead>Aktif</TableHead>{(hasEdit || hasDelete) && <TableHead className="w-[60px]" />}</TableRow></TableHeader>
                         <TableBody>
                           {zoneCams.map(cam => (
                             <TableRow key={cam.id}>
                               <TableCell className="font-medium">{cam.name}</TableCell>
                               <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
                               <TableCell><Badge variant="outline" className="capitalize">{(cam as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'}</Badge></TableCell>
-                              <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} /></TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCamDialog(zone.id, cam)}><Pencil className="h-3.5 w-3.5" /></Button>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                                </div>
-                              </TableCell>
+                              <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} disabled={!hasEdit} /></TableCell>
+                              {(hasEdit || hasDelete) && (
+                                <TableCell>
+                                  <div className="flex gap-1">
+                                    {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCamDialog(zone.id, cam)}><Pencil className="h-3.5 w-3.5" /></Button>}
+                                    {hasDelete && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteCam(cam)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                                  </div>
+                                </TableCell>
+                              )}
                             </TableRow>
                           ))}
                         </TableBody>
@@ -260,6 +276,7 @@ export default function Zones() {
             <div className="grid gap-2">
               <Label>Nama Zona <span className="text-destructive">*</span></Label>
               <Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} maxLength={100} />
+              {zoneForm.name && !zoneNameValid && <p className="text-xs text-destructive">Nama zona hanya boleh mengandung huruf, angka, dan -</p>}
               <p className="text-xs text-muted-foreground text-right">{zoneForm.name.length}/100</p>
             </div>
             <div className="grid gap-2">
@@ -270,7 +287,7 @@ export default function Zones() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
-            <Button onClick={() => saveZoneMut.mutate()} disabled={saveZoneMut.isPending || !zoneForm.name}>Simpan</Button>
+            <Button onClick={() => saveZoneMut.mutate()} disabled={saveZoneMut.isPending || !zoneForm.name || !zoneNameValid}>Simpan</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

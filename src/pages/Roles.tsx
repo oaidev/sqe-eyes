@@ -69,7 +69,20 @@ export default function Roles() {
   const togglePerm = (role: string, page: string, field: 'can_view' | 'can_edit' | 'can_delete') => {
     const key = `${role}:${page}`;
     const current = getPerm(role, page);
-    setLocalPerms(prev => ({ ...prev, [key]: { ...current, [field]: !current[field] } }));
+    const newValue = !current[field];
+    const updated = { ...current, [field]: newValue };
+
+    // Auto-enable view when edit or delete is enabled
+    if ((field === 'can_edit' || field === 'can_delete') && newValue) {
+      updated.can_view = true;
+    }
+    // Auto-disable edit and delete when view is disabled
+    if (field === 'can_view' && !newValue) {
+      updated.can_edit = false;
+      updated.can_delete = false;
+    }
+
+    setLocalPerms(prev => ({ ...prev, [key]: updated }));
     setDirty(true);
   };
 

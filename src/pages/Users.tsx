@@ -13,6 +13,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { UserPlus, Trash2, Pencil, Loader2, Copy, Check, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
+import { usePermissions } from '@/hooks/usePermissions';
+import { REGEX_NAME, REGEX_EMAIL, validateField } from '@/lib/validation';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -43,6 +45,10 @@ async function invokeManageUsers(action: string, method: string, body?: any) {
 export default function Users() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { canEdit, canDelete } = usePermissions();
+  const hasEdit = canEdit('users');
+  const hasDelete = canDelete('users');
+
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteFullName, setInviteFullName] = useState('');
@@ -54,6 +60,9 @@ export default function Users() {
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('all');
+
+  const emailValid = validateField(inviteEmail, REGEX_EMAIL);
+  const fullNameValid = validateField(inviteFullName, REGEX_NAME);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['manage-users'],
@@ -101,6 +110,8 @@ export default function Users() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const inviteInvalid = !inviteEmail || !inviteFullName || !emailValid || !fullNameValid || inviteMutation.isPending;
+
   return (
     <AppLayout title="Kelola Pengguna">
       <div className="space-y-6">
@@ -118,7 +129,7 @@ export default function Users() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Invite User</Button>
+          {hasEdit && <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Invite User</Button>}
         </div>
 
         <Card>
@@ -129,7 +140,8 @@ export default function Users() {
               <Table>
                 <TableHeader>
                    <TableRow>
-                    <TableHead>Email</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>Login Terakhir</TableHead><TableHead className="w-[80px]" />
+                    <TableHead>Email</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>Login Terakhir</TableHead>
+                    {(hasEdit || hasDelete) && <TableHead className="w-[80px]" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -141,12 +153,14 @@ export default function Users() {
                       <TableCell>{u.full_name || '—'}</TableCell>
                       <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Belum ada role'}</Badge></TableCell>
                       <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID') : '—'}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingUser(u); setEditRole(u.role || 'operator'); }}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteUserId(u.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </div>
-                      </TableCell>
+                      {(hasEdit || hasDelete) && (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingUser(u); setEditRole(u.role || 'operator'); }}><Pencil className="h-3.5 w-3.5" /></Button>}
+                            {hasDelete && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteUserId(u.id)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -161,10 +175,15 @@ export default function Users() {
         <DialogContent>
           <DialogHeader><DialogTitle>Invite User Baru</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2"><Label>Email <span className="text-destructive">*</span></Label><Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" /></div>
+            <div className="space-y-2">
+              <Label>Email <span className="text-destructive">*</span></Label>
+              <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" />
+              {inviteEmail && !emailValid && <p className="text-xs text-destructive">Format email tidak valid</p>}
+            </div>
             <div className="space-y-2">
               <Label>Nama Lengkap <span className="text-destructive">*</span></Label>
               <Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} maxLength={100} />
+              {inviteFullName && !fullNameValid && <p className="text-xs text-destructive">Nama hanya boleh mengandung huruf</p>}
               <p className="text-xs text-muted-foreground text-right">{inviteFullName.length}/100</p>
             </div>
             <div className="space-y-2">
@@ -177,7 +196,7 @@ export default function Users() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Batal</Button>
-            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || !inviteFullName || inviteMutation.isPending}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
+            <Button onClick={() => inviteMutation.mutate()} disabled={inviteInvalid}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
