@@ -139,7 +139,7 @@ export default function Users() {
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.full_name || '—'}</TableCell>
-                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role || 'Belum ada role'}</Badge></TableCell>
+                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Belum ada role'}</Badge></TableCell>
                       <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID') : '—'}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
