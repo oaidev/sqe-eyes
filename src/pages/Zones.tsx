@@ -257,8 +257,16 @@ export default function Zones() {
         <DialogContent>
           <DialogHeader><DialogTitle>{editingZone ? 'Edit Zona' : 'Tambah Zona'}</DialogTitle><DialogDescription>Kelola informasi zona.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2"><Label>Nama Zona</Label><Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Deskripsi</Label><Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Nama Zona <span className="text-destructive">*</span></Label>
+              <Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} maxLength={100} />
+              <p className="text-xs text-muted-foreground text-right">{zoneForm.name.length}/100</p>
+            </div>
+            <div className="grid gap-2">
+              <Label>Deskripsi</Label>
+              <Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} maxLength={250} />
+              <p className="text-xs text-muted-foreground text-right">{zoneForm.description.length}/250</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
@@ -272,8 +280,16 @@ export default function Zones() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan konfigurasi deteksi.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2"><Label>Nama Kamera</Label><Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>RTSP URL</Label><Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." /></div>
+            <div className="grid gap-2">
+              <Label>Nama Kamera <span className="text-destructive">*</span></Label>
+              <Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} maxLength={100} />
+              <p className="text-xs text-muted-foreground text-right">{camForm.name.length}/100</p>
+            </div>
+            <div className="grid gap-2">
+              <Label>RTSP URL <span className="text-destructive">*</span></Label>
+              <Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." maxLength={500} />
+              <p className="text-xs text-muted-foreground text-right">{camForm.rtsp_url.length}/500</p>
+            </div>
             <div className="grid gap-2">
               <Label>Jenis Pelanggaran yang Dideteksi</Label>
               <Select value={camForm.jenis_pelanggaran} onValueChange={v => setCamForm({ ...camForm, jenis_pelanggaran: v })}>
@@ -360,7 +376,7 @@ export default function Zones() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCamDialog(false)}>Batal</Button>
-            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name}>Simpan</Button>
+            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name || !camForm.rtsp_url}>Simpan</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

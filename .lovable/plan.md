@@ -1,79 +1,103 @@
 
 
-## 10 Perbaikan: Zona, Pengguna, Role, Dashboard & Deteksi
+## Plan: Replace All AWS Rekognition with Cosmos API
 
-### Files to modify
-- `src/pages/Zones.tsx` — poin 1, 2, 3
-- `src/pages/Users.tsx` — poin 2, 4, 5
-- `src/pages/Roles.tsx` — poin 6, 10
-- `src/pages/Index.tsx` — poin 7
-- `src/pages/Workers.tsx` — poin 9
-- `supabase/functions/detect-event/index.ts` — poin 8
+### Context
 
----
+Replace **all** AWS Rekognition calls (face detection, face search, PPE detection) with a single Cosmos API that handles everything in one call. The API requires a login step to get a JWT token, then an infer endpoint that returns person detections with face recognition and PPE analysis built-in.
 
-### 1. Nama Kamera & RTSP URL wajib di tambah kamera
-**Zones.tsx baris 363**: Ubah disabled condition dari `!camForm.name` → `!camForm.name || !camForm.rtsp_url`
+### API Response Analysis
 
-### 2. Tanda * merah pada semua field wajib
-- **Zones.tsx**: Tambah `<span className="text-destructive">*</span>` pada Label Nama Kamera (baris 275), RTSP URL (baris 276), Nama Zona (baris 260)
-- **Users.tsx**: Tambah asterisk pada Label Email (baris 164), Role (baris 167). Nama Lengkap jadi wajib (poin 5)
+The `/api/v1/infer` response contains detections where:
+- **`class: "person"`** entries have: `face_name`, `similarity`, `ppe_valid`, `ppe_missing`, `bbox`
+- **`class: "helmet"|"safety_vest"|etc`** entries have: `bbox`, `confidence` (individual PPE item boxes for visualization)
 
-### 3. Karakter max + counter pada form Zona & Kamera
-- Nama Kamera: `maxLength={100}` + counter `{camForm.name.length}/100`
-- RTSP URL: `maxLength={500}` + counter `{camForm.rtsp_url.length}/500`
-- Nama Zona: `maxLength={100}` + counter `{zoneForm.name.length}/100`
-- Deskripsi Zona: `maxLength={250}` + counter `{zoneForm.description.length}/250`, ubah ke Textarea jika mau tapi bisa tetap Input
+Key insight: the API already associates PPE to persons (`ppe_missing` is on the person detection), so we don't need the face-to-body overlap logic.
 
-### 4. Role di tabel pengguna → Uppercase first character
-**Users.tsx baris 142**: Ubah `{u.role || 'Belum ada role'}` → `{u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Belum ada role'}`
+### Mapping
 
-### 5. Nama Lengkap wajib, max 100 karakter
-**Users.tsx baris 165**: 
-- Ubah label dari "Nama Lengkap (opsional)" → "Nama Lengkap" + asterisk merah
-- Tambah `maxLength={100}` pada Input
-- Tambah counter `{inviteFullName.length}/100`
-- Ubah disabled button (baris 176): tambah `|| !inviteFullName`
+| API `ppe_missing` value | Internal Key |
+|---|---|
+| `"gloves"` | `HAND_COVER` |
+| `"safety glasses"` | `SAFETY_GLASSES` |
+| `"shoes"` | `SAFETY_SHOES` |
+| `"vest"` | `REFLECTIVE_VEST` |
+| `"helmet"` (inferred if not in detections) | `HEAD_COVER` |
 
-### 6 & 10. Kelola Role — hide toggle yang tidak berlaku
-**Roles.tsx**: Definisi config per page tentang toggle mana yang tersedia:
-```tsx
-const PAGE_TOGGLE_CONFIG: Record<string, { edit: boolean; delete: boolean }> = {
-  dashboard: { edit: false, delete: false },
-  workers: { edit: true, delete: true },
-  zones: { edit: true, delete: true },
-  users: { edit: true, delete: true },
-  roles: { edit: true, delete: true },
-  simulate: { edit: true, delete: false },
-  'operator-validation': { edit: true, delete: false },
-  'supervisor-validation': { edit: true, delete: false },
-};
+| API `face_name` | Match to |
+|---|---|
+| Non-null string (e.g. "Carry") | `workers.nama` (case-insensitive lookup) |
+| `null` / absent | Unknown person |
+
+### Bounding Box Conversion
+
+API returns `bbox: [x1, y1, x2, y2]` in **pixel coordinates**. Must normalize to `{Left, Top, Width, Height}` in 0-1 range using the image dimensions. Since the API returns a `frame` field (base64 image), we can decode dimensions from the input image or use a fixed known size.
+
+**Approach**: Send image dimensions alongside the request, or extract from the input image bytes. The edge function already has `imageBytes` — we'll parse JPEG/PNG header for width/height.
+
+### Credential Storage
+
+Store Cosmos API credentials in `system_config`:
+- `cosmos_api_url`: `"https://cosmos.squantumengine.com"`
+- `cosmos_api_username`: `"admin"`
+- `cosmos_api_password`: `"admin"`
+
+This keeps them configurable without redeployment. Alternatively, use secrets for password — but since user provided them directly and they're `admin/admin`, system_config is fine for now.
+
+### Files Changed
+
+#### 1. Database — insert config rows
+Insert into `system_config`:
+- `cosmos_api_url` = `"https://cosmos.squantumengine.com"`
+- `cosmos_api_username` = `"admin"`
+- `cosmos_api_password` = `"admin"`
+
+#### 2. `supabase/functions/detect-event/index.ts` — Major rewrite
+- **Remove**: All AWS Signature V4 helpers, all Rekognition calls (DetectFaces, SearchFacesByImage, DetectProtectiveEquipment, DetectLabels), PPE_MAP, SHOE_LABELS, VEST_LABELS, bboxOverlap, uint8ToBase64
+- **Add**:
+  - `cosmosLogin(apiUrl, username, password)` → returns JWT token
+  - `cosmosInfer(apiUrl, token, imageBytes)` → calls `/api/v1/infer` with multipart form-data, returns detections array
+  - `getImageDimensions(bytes)` → parse JPEG/PNG header for width/height to normalize bboxes
+  - `mapPpeMissing(ppe_missing)` → converts API's missing list to our internal PPE results format
+- **New flow**:
+  1. Read cosmos config from `system_config`
+  2. Login to get token
+  3. Call infer with image
+  4. For each `class: "person"` detection:
+     - Normalize bbox to 0-1 range
+     - Look up `face_name` → match to `workers.nama` (case-insensitive) to get worker_id
+     - Build `ppe_results` from `ppe_missing`: all 5 PPE items marked detected=true except those in ppe_missing
+     - **But**: still apply zone PPE matrix rules (existing step 5-6 logic stays)
+  5. Rest of logic (zone rules, event/alert creation) stays the same
+
+#### 3. `supabase/functions/enroll-worker/index.ts` — Discuss impact
+The Cosmos API uses `face_name` matching, not face_id from Rekognition IndexFaces. This means:
+- **Face enrollment to AWS is no longer needed for detection** — the Cosmos API handles recognition internally
+- However, the enrollment flow (upload photos → IndexFaces) may still be needed if Cosmos requires face registration
+- **For now**: keep enroll-worker as-is since it's a separate concern. The user said "face recognition matching antara di kelola pekerja untuk face_name" — meaning the `nama` field in workers table is what gets matched to `face_name` from the API
+
+#### 4. `BoundingBoxOverlay.tsx` — Minor update
+- Also render individual PPE item bounding boxes (helmet, vest detections) returned by the API, not just person boxes
+- This gives visual confirmation of what the model detected
+
+#### 5. `Simulate.tsx` — No changes needed
+- The frontend already sends `image_base64` and receives the same response structure
+
+### Technical Detail: Image Dimension Parsing
+
+To normalize pixel bboxes, we need image width/height. Simple approach:
+```typescript
+// Parse JPEG dimensions from SOF marker
+function getJpegDimensions(bytes: Uint8Array): {w: number, h: number} { ... }
+// Parse PNG dimensions from IHDR chunk
+function getPngDimensions(bytes: Uint8Array): {w: number, h: number} { ... }
 ```
-Di render: jika config `edit: false`, tampilkan `—` bukan Switch. Sama untuk delete.
 
-### 7. Dashboard: Zona Aktif = zona dengan kamera aktif
-**Index.tsx baris 35-38**: Ganti query dari count zones aktif → query zones yang punya minimal 1 kamera aktif:
-```tsx
-queryFn: async () => {
-  const { data } = await supabase.from('cameras').select('zone_id').eq('is_active', true);
-  const uniqueZones = new Set((data || []).map(c => c.zone_id));
-  return uniqueZones.size;
-},
-```
+Alternative: use a fixed assumption (e.g., if the API always returns based on the original image dimensions) or include dimensions from the frontend.
 
-### 8. Unknown person → deteksi berdasarkan general PPE rules
-**detect-event/index.ts baris 360**: Ubah dari:
-```ts
-if (!person.workerInfo) return true;
-```
-menjadi:
-```ts
-if (!person.workerInfo) return !rule.jabatan;
-```
-Ini memastikan orang tidak dikenal hanya dievaluasi dengan rules general (jabatan=null), bukan semua rules termasuk jabatan-spesifik.
-
-Tambah juga logic untuk known worker yang jabatannya tidak ada di rules spesifik — sudah benar di kode saat ini (hanya general yang apply).
-
-### 9. Counter nama di Workers konsisten
-**Workers.tsx baris 294 dan 300**: Sudah dalam format `{count}/100` text-right. Pastikan tidak ada helper text tambahan selain counter. Kode saat ini sudah benar — akan di-review dan dipastikan konsisten.
+### What Stays the Same
+- Zone PPE rules logic (step 5-6)
+- Event and alert creation
+- Frontend components (BoundingBoxOverlay, Simulate.tsx result rendering)
+- PPE labels and internal keys
 

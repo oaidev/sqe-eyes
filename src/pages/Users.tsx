@@ -139,7 +139,7 @@ export default function Users() {
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.full_name || '—'}</TableCell>
-                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role || 'Belum ada role'}</Badge></TableCell>
+                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Belum ada role'}</Badge></TableCell>
                       <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID') : '—'}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
@@ -161,10 +161,14 @@ export default function Users() {
         <DialogContent>
           <DialogHeader><DialogTitle>Invite User Baru</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2"><Label>Email</Label><Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" /></div>
-            <div className="space-y-2"><Label>Nama Lengkap (opsional)</Label><Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} /></div>
+            <div className="space-y-2"><Label>Email <span className="text-destructive">*</span></Label><Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" /></div>
             <div className="space-y-2">
-              <Label>Role</Label>
+              <Label>Nama Lengkap <span className="text-destructive">*</span></Label>
+              <Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} maxLength={100} />
+              <p className="text-xs text-muted-foreground text-right">{inviteFullName.length}/100</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Role <span className="text-destructive">*</span></Label>
               <Select value={inviteRole} onValueChange={v => setInviteRole(v as AppRole)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
@@ -173,7 +177,7 @@ export default function Users() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Batal</Button>
-            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || inviteMutation.isPending}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
+            <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail || !inviteFullName || inviteMutation.isPending}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

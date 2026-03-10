@@ -33,8 +33,12 @@ export default function Index() {
   });
 
   const { data: zoneCount, isLoading: zl } = useQuery({
-    queryKey: ['stats-zones'],
-    queryFn: async () => { const { count } = await supabase.from('zones').select('*', { count: 'exact', head: true }).eq('is_active', true); return count ?? 0; },
+    queryKey: ['stats-zones-active-cameras'],
+    queryFn: async () => {
+      const { data } = await supabase.from('cameras').select('zone_id').eq('is_active', true);
+      const uniqueZones = new Set((data || []).map(c => c.zone_id));
+      return uniqueZones.size;
+    },
   });
 
   const { data: cameraCount, isLoading: cl } = useQuery({
