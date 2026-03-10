@@ -257,8 +257,16 @@ export default function Zones() {
         <DialogContent>
           <DialogHeader><DialogTitle>{editingZone ? 'Edit Zona' : 'Tambah Zona'}</DialogTitle><DialogDescription>Kelola informasi zona.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2"><Label>Nama Zona</Label><Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Deskripsi</Label><Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Nama Zona <span className="text-destructive">*</span></Label>
+              <Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} maxLength={100} />
+              <p className="text-xs text-muted-foreground text-right">{zoneForm.name.length}/100</p>
+            </div>
+            <div className="grid gap-2">
+              <Label>Deskripsi</Label>
+              <Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} maxLength={250} />
+              <p className="text-xs text-muted-foreground text-right">{zoneForm.description.length}/250</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
