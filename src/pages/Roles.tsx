@@ -21,6 +21,17 @@ const PAGES = [
   { key: 'supervisor-validation', label: 'Validasi Supervisor' },
 ];
 
+const PAGE_TOGGLE_CONFIG: Record<string, { edit: boolean; delete: boolean }> = {
+  dashboard: { edit: false, delete: false },
+  workers: { edit: true, delete: true },
+  zones: { edit: true, delete: true },
+  users: { edit: true, delete: true },
+  roles: { edit: true, delete: true },
+  simulate: { edit: true, delete: false },
+  'operator-validation': { edit: true, delete: false },
+  'supervisor-validation': { edit: true, delete: false },
+};
+
 type PermRow = {
   id?: string;
   role: string;
