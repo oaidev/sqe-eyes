@@ -2,13 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ShieldCheck, ShieldAlert } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const ALL_PPE_ITEMS = ['HEAD_COVER', 'HAND_COVER', 'SAFETY_GLASSES', 'SAFETY_SHOES', 'REFLECTIVE_VEST'] as const;
-const PPE_LABEL: Record<string, string> = {
-  HEAD_COVER: 'Helm', HAND_COVER: 'Sarung Tangan', SAFETY_GLASSES: 'Kacamata',
-  SAFETY_SHOES: 'Sepatu', REFLECTIVE_VEST: 'Rompi',
-};
 
 interface PpeMatrixDisplayProps {
   zoneId: string;
@@ -16,6 +13,7 @@ interface PpeMatrixDisplayProps {
 }
 
 export function PpeMatrixDisplay({ zoneId, zoneName }: PpeMatrixDisplayProps) {
+  const { t } = useTranslation();
   const { data: rules = [] } = useQuery({
     queryKey: ['zone-ppe-rules', zoneId],
     queryFn: async () => {
@@ -31,7 +29,6 @@ export function PpeMatrixDisplay({ zoneId, zoneName }: PpeMatrixDisplayProps) {
 
   if (rules.length === 0) return null;
 
-  // Group by jabatan (null = General)
   const jabatanSet = new Set<string | null>();
   rules.forEach(r => jabatanSet.add(r.jabatan));
   const jabatans = Array.from(jabatanSet).sort((a, b) => {
@@ -40,11 +37,9 @@ export function PpeMatrixDisplay({ zoneId, zoneName }: PpeMatrixDisplayProps) {
     return a.localeCompare(b);
   });
 
-  // Build matrix: jabatan → ppe_item → required
   const matrix = new Map<string | null, Set<string>>();
   rules.forEach(r => {
     if (!matrix.has(r.jabatan)) matrix.set(r.jabatan, new Set());
-    // Normalize FACE_COVER → SAFETY_GLASSES
     const item = r.ppe_item === 'FACE_COVER' ? 'SAFETY_GLASSES' : r.ppe_item;
     matrix.get(r.jabatan)!.add(item);
   });
@@ -52,14 +47,14 @@ export function PpeMatrixDisplay({ zoneId, zoneName }: PpeMatrixDisplayProps) {
   return (
     <div className="border rounded-lg overflow-hidden">
       <div className="bg-muted px-3 py-1.5">
-        <p className="text-xs font-medium">Matrix APD — {zoneName || 'Zona'}</p>
+        <p className="text-xs font-medium">{t('simulate.matrix', { name: zoneName || t('simulate.zone') })}</p>
       </div>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="text-xs w-24">Jabatan</TableHead>
+            <TableHead className="text-xs w-24">{t('simulate.jabatan')}</TableHead>
             {ALL_PPE_ITEMS.map(item => (
-              <TableHead key={item} className="text-xs text-center px-1">{PPE_LABEL[item]}</TableHead>
+              <TableHead key={item} className="text-xs text-center px-1">{t(`zones.ppe.${item}`)}</TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -67,7 +62,7 @@ export function PpeMatrixDisplay({ zoneId, zoneName }: PpeMatrixDisplayProps) {
           {jabatans.map(jab => (
             <TableRow key={jab || '__general__'}>
               <TableCell className="text-xs font-medium py-1">
-                <Badge variant="outline" className="text-[10px]">{jab || 'General'}</Badge>
+                <Badge variant="outline" className="text-[10px]">{jab || t('simulate.general')}</Badge>
               </TableCell>
               {ALL_PPE_ITEMS.map(item => {
                 const required = matrix.get(jab)?.has(item);
