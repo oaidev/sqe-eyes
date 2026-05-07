@@ -15,12 +15,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { usePermissions } from '@/hooks/usePermissions';
 import { REGEX_NAME, REGEX_EMAIL, validateField } from '@/lib/validation';
+import { useTranslation } from 'react-i18next';
 
-const ROLES = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'operator', label: 'Operator' },
-  { value: 'supervisor', label: 'Supervisor' },
-] as const;
+const ROLE_VALUES = ['admin', 'operator', 'supervisor'] as const;
 
 type AppRole = 'admin' | 'operator' | 'supervisor';
 
@@ -46,6 +43,7 @@ export default function Users() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { canEdit, canDelete } = usePermissions();
+  const { t, i18n } = useTranslation();
   const hasEdit = canEdit('users');
   const hasDelete = canDelete('users');
 
@@ -83,19 +81,19 @@ export default function Users() {
       setInviteEmail(''); setInviteFullName('');
       queryClient.invalidateQueries({ queryKey: ['manage-users'] });
     },
-    onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
+    onError: (err: Error) => toast({ title: t('users.toast.failed'), description: err.message, variant: 'destructive' }),
   });
 
   const updateRoleMutation = useMutation({
     mutationFn: ({ user_id, role }: { user_id: string; role: string }) => invokeManageUsers('update-role', 'POST', { user_id, role }),
-    onSuccess: () => { toast({ title: 'Role diperbarui' }); setEditingUser(null); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
-    onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
+    onSuccess: () => { toast({ title: t('users.toast.roleUpdated') }); setEditingUser(null); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
+    onError: (err: Error) => toast({ title: t('users.toast.failed'), description: err.message, variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (user_id: string) => invokeManageUsers('delete-user', 'POST', { user_id }),
-    onSuccess: () => { toast({ title: 'User dihapus' }); setDeleteUserId(null); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
-    onError: (err: Error) => toast({ title: 'Gagal', description: err.message, variant: 'destructive' }),
+    onSuccess: () => { toast({ title: t('users.toast.userDeleted') }); setDeleteUserId(null); queryClient.invalidateQueries({ queryKey: ['manage-users'] }); },
+    onError: (err: Error) => toast({ title: t('users.toast.failed'), description: err.message, variant: 'destructive' }),
   });
 
   const roleBadgeVariant = (role: string | null) => {
@@ -111,25 +109,26 @@ export default function Users() {
   };
 
   const inviteInvalid = !inviteEmail || !inviteFullName || !emailValid || !fullNameValid || inviteMutation.isPending;
+  const localeDate = i18n.language.startsWith('en') ? 'en-US' : 'id-ID';
 
   return (
-    <AppLayout title="Kelola Pengguna">
+    <AppLayout title={t('users.title')}>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-2">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Cari email atau nama..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9" />
+              <Input placeholder={t('users.searchPlaceholder')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9" />
             </div>
             <Select value={filterRole} onValueChange={setFilterRole}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Role" /></SelectTrigger>
+              <SelectTrigger className="w-[140px]"><SelectValue placeholder={t('users.role')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua Role</SelectItem>
-                {ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                <SelectItem value="all">{t('users.allRoles')}</SelectItem>
+                {ROLE_VALUES.map(r => <SelectItem key={r} value={r}>{t(`users.roles.${r}`)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          {hasEdit && <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Invite User</Button>}
+          {hasEdit && <Button onClick={() => setInviteOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> {t('users.invite')}</Button>}
         </div>
 
         <Card>
@@ -140,19 +139,22 @@ export default function Users() {
               <Table>
                 <TableHeader>
                    <TableRow>
-                    <TableHead>Email</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>Login Terakhir</TableHead>
+                    <TableHead>{t('users.table.email')}</TableHead>
+                    <TableHead>{t('users.table.name')}</TableHead>
+                    <TableHead>{t('users.table.role')}</TableHead>
+                    <TableHead>{t('users.table.lastLogin')}</TableHead>
                     {(hasEdit || hasDelete) && <TableHead className="w-[80px]" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredUsers.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Tidak ada data pengguna</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">{t('users.empty')}</TableCell></TableRow>
                   ) : filteredUsers.map(u => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.full_name || '—'}</TableCell>
-                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Belum ada role'}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('id-ID') : '—'}</TableCell>
+                      <TableCell><Badge variant={roleBadgeVariant(u.role)}>{u.role ? t(`users.roles.${u.role}`) : t('users.noRole')}</Badge></TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString(localeDate) : '—'}</TableCell>
                       {(hasEdit || hasDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -173,30 +175,30 @@ export default function Users() {
       {/* Invite Dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Invite User Baru</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('users.inviteTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>Email <span className="text-destructive">*</span></Label>
+              <Label>{t('users.table.email')} <span className="text-destructive">*</span></Label>
               <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" />
-              {inviteEmail && !emailValid && <p className="text-xs text-destructive">Format email tidak valid</p>}
+              {inviteEmail && !emailValid && <p className="text-xs text-destructive">{t('validationErrors.email')}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Nama Lengkap <span className="text-destructive">*</span></Label>
+              <Label>{t('users.fullName')} <span className="text-destructive">*</span></Label>
               <Input value={inviteFullName} onChange={e => setInviteFullName(e.target.value)} maxLength={100} />
-              {inviteFullName && !fullNameValid && <p className="text-xs text-destructive">Nama hanya boleh mengandung huruf</p>}
+              {inviteFullName && !fullNameValid && <p className="text-xs text-destructive">{t('validationErrors.name')}</p>}
               <p className="text-xs text-muted-foreground text-right">{inviteFullName.length}/100</p>
             </div>
             <div className="space-y-2">
-              <Label>Role <span className="text-destructive">*</span></Label>
+              <Label>{t('users.role')} <span className="text-destructive">*</span></Label>
               <Select value={inviteRole} onValueChange={v => setInviteRole(v as AppRole)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+                <SelectContent>{ROLE_VALUES.map(r => <SelectItem key={r} value={r}>{t(`users.roles.${r}`)}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>Batal</Button>
-            <Button onClick={() => inviteMutation.mutate()} disabled={inviteInvalid}>{inviteMutation.isPending ? 'Membuat...' : 'Buat Akun'}</Button>
+            <Button variant="outline" onClick={() => setInviteOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={() => inviteMutation.mutate()} disabled={inviteInvalid}>{inviteMutation.isPending ? t('users.creating') : t('users.createAccount')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -205,16 +207,16 @@ export default function Users() {
       <Dialog open={!!createdCredentials} onOpenChange={() => { setCreatedCredentials(null); setCopied(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Akun Berhasil Dibuat</DialogTitle>
-            <DialogDescription>Berikan kredensial ini ke pengguna. Password hanya ditampilkan sekali.</DialogDescription>
+            <DialogTitle>{t('users.createdTitle')}</DialogTitle>
+            <DialogDescription>{t('users.createdDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Email</Label>
+              <Label className="text-xs text-muted-foreground">{t('users.table.email')}</Label>
               <p className="font-medium">{createdCredentials?.email}</p>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Password Sementara</Label>
+              <Label className="text-xs text-muted-foreground">{t('users.tempPassword')}</Label>
               <div className="flex items-center gap-2">
                 <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono tracking-wider">{createdCredentials?.password}</code>
                 <Button size="sm" variant="outline" onClick={handleCopyPassword}>
@@ -224,7 +226,7 @@ export default function Users() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => { setCreatedCredentials(null); setCopied(false); }}>Tutup</Button>
+            <Button onClick={() => { setCreatedCredentials(null); setCopied(false); }}>{t('common.close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -232,16 +234,16 @@ export default function Users() {
       {/* Edit Role Dialog */}
       <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Ubah Role — {editingUser?.email}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('users.editRoleTitle', { email: editingUser?.email })}</DialogTitle></DialogHeader>
           <div className="py-4">
             <Select value={editRole} onValueChange={v => setEditRole(v as AppRole)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{ROLE_VALUES.map(r => <SelectItem key={r} value={r}>{t(`users.roles.${r}`)}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingUser(null)}>Batal</Button>
-            <Button onClick={() => editingUser && updateRoleMutation.mutate({ user_id: editingUser.id, role: editRole })} disabled={updateRoleMutation.isPending}>Simpan</Button>
+            <Button variant="outline" onClick={() => setEditingUser(null)}>{t('common.cancel')}</Button>
+            <Button onClick={() => editingUser && updateRoleMutation.mutate({ user_id: editingUser.id, role: editRole })} disabled={updateRoleMutation.isPending}>{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -249,10 +251,10 @@ export default function Users() {
       {/* Delete Confirm */}
       <AlertDialog open={!!deleteUserId} onOpenChange={() => setDeleteUserId(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>User akan dihapus permanen.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>{t('users.deleteTitle')}</AlertDialogTitle><AlertDialogDescription>{t('users.deleteDesc')}</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteUserId && deleteMutation.mutate(deleteUserId)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Hapus</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteUserId && deleteMutation.mutate(deleteUserId)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{t('common.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

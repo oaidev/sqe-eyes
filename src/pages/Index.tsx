@@ -7,8 +7,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { format, subDays } from 'date-fns';
-import { id as idLocale } from 'date-fns/locale';
+import { id as idLocale, enUS } from 'date-fns/locale';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const StatCard = ({ title, value, icon: Icon, color, loading }: { title: string; value: string; icon: React.ComponentType<{ className?: string }>; color: string; loading?: boolean }) => (
   <Card>
@@ -26,6 +27,8 @@ const StatCard = ({ title, value, icon: Icon, color, loading }: { title: string;
 
 export default function Index() {
   const { userRole, user } = useAuth();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language.startsWith('en') ? enUS : idLocale;
 
   const { data: workerCount, isLoading: wl } = useQuery({
     queryKey: ['stats-workers'],
@@ -67,7 +70,6 @@ export default function Index() {
 
   const unvalidatedCount = (alertCount ?? 0) - validatedCount;
 
-  // 7-day chart data — count alerts per day as sudah/belum divalidasi
   const { data: chartAlerts = [] } = useQuery({
     queryKey: ['stats-7day-alerts'],
     queryFn: async () => {
@@ -94,13 +96,13 @@ export default function Index() {
 
   const makeDays = () => Array.from({ length: 7 }, (_, i) => {
     const d = subDays(new Date(), 6 - i);
-    return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: idLocale }), valid: 0, tidak_valid: 0, belum: 0 };
+    return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: dateLocale }), valid: 0, tidak_valid: 0, belum: 0 };
   });
 
   const chartData = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, i) => {
       const d = subDays(new Date(), 6 - i);
-      return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: idLocale }), sudah: 0, belum: 0 };
+      return { date: format(d, 'yyyy-MM-dd'), label: format(d, 'dd MMM', { locale: dateLocale }), sudah: 0, belum: 0 };
     });
     chartAlerts.forEach((a: any) => {
       const aDate = a.created_at?.substring(0, 10);
@@ -111,7 +113,7 @@ export default function Index() {
       }
     });
     return days;
-  }, [chartAlerts, validationMap]);
+  }, [chartAlerts, validationMap, dateLocale]);
 
   const apdChartData = useMemo(() => {
     const days = makeDays();
@@ -125,7 +127,7 @@ export default function Index() {
       }
     });
     return days;
-  }, [chartAlerts, validationMap]);
+  }, [chartAlerts, validationMap, dateLocale]);
 
   const exitChartData = useMemo(() => {
     const days = makeDays();
@@ -139,30 +141,30 @@ export default function Index() {
       }
     });
     return days;
-  }, [chartAlerts, validationMap]);
+  }, [chartAlerts, validationMap, dateLocale]);
 
   return (
-    <AppLayout title="Dashboard">
+    <AppLayout title={t('dashboard.title')}>
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl font-semibold">Selamat Datang 👋</h2>
+          <h2 className="text-xl font-semibold">{t('dashboard.welcome')}</h2>
           <p className="text-sm text-muted-foreground">
-            {user?.email} — <span className="capitalize">{userRole || 'Belum ada role'}</span>
+            {user?.email} — <span className="capitalize">{userRole || t('dashboard.noRole')}</span>
           </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <StatCard title="Pekerja Aktif" value={String(workerCount ?? 0)} icon={Users} color="bg-primary/10 text-primary" loading={wl} />
-          <StatCard title="Zona Aktif" value={String(zoneCount ?? 0)} icon={MapPin} color="bg-green-500/10 text-green-600" loading={zl} />
-          <StatCard title="Kamera Aktif" value={String(cameraCount ?? 0)} icon={Camera} color="bg-primary/10 text-primary" loading={cl} />
-          <StatCard title="Alert Hari Ini" value={String(alertCount ?? 0)} icon={AlertTriangle} color="bg-amber-500/10 text-amber-600" loading={al} />
-          <StatCard title="Sudah Divalidasi" value={String(validatedCount)} icon={CheckCircle} color="bg-green-500/10 text-green-600" loading={vl} />
-          <StatCard title="Belum Divalidasi" value={String(unvalidatedCount)} icon={XCircle} color="bg-destructive/10 text-destructive" loading={vl || al} />
+          <StatCard title={t('dashboard.stats.activeWorkers')} value={String(workerCount ?? 0)} icon={Users} color="bg-primary/10 text-primary" loading={wl} />
+          <StatCard title={t('dashboard.stats.activeZones')} value={String(zoneCount ?? 0)} icon={MapPin} color="bg-green-500/10 text-green-600" loading={zl} />
+          <StatCard title={t('dashboard.stats.activeCameras')} value={String(cameraCount ?? 0)} icon={Camera} color="bg-primary/10 text-primary" loading={cl} />
+          <StatCard title={t('dashboard.stats.alertsToday')} value={String(alertCount ?? 0)} icon={AlertTriangle} color="bg-amber-500/10 text-amber-600" loading={al} />
+          <StatCard title={t('dashboard.stats.validated')} value={String(validatedCount)} icon={CheckCircle} color="bg-green-500/10 text-green-600" loading={vl} />
+          <StatCard title={t('dashboard.stats.notValidated')} value={String(unvalidatedCount)} icon={XCircle} color="bg-destructive/10 text-destructive" loading={vl || al} />
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Alert 7 Hari Terakhir</CardTitle>
+            <CardTitle className="text-base">{t('dashboard.charts.alerts7Days')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -171,8 +173,8 @@ export default function Index() {
                 <YAxis allowDecimals={false} fontSize={12} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="sudah" name="Sudah Divalidasi" fill="hsl(var(--primary))" stackId="a" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="belum" name="Belum Divalidasi" fill="hsl(var(--destructive))" stackId="a" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="sudah" name={t('dashboard.charts.validated')} fill="hsl(var(--primary))" stackId="a" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="belum" name={t('dashboard.charts.notValidated')} fill="hsl(var(--destructive))" stackId="a" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -181,7 +183,7 @@ export default function Index() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">APD Tidak Lengkap — 7 Hari Terakhir</CardTitle>
+              <CardTitle className="text-base">{t('dashboard.charts.apd7Days')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
@@ -190,9 +192,9 @@ export default function Index() {
                   <YAxis allowDecimals={false} fontSize={12} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="valid" name="Valid" fill="hsl(var(--chart-2))" stackId="a" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="tidak_valid" name="Tidak Valid" fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="belum" name="Belum Divalidasi" fill="hsl(var(--muted-foreground))" stackId="a" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="valid" name={t('dashboard.charts.valid')} fill="hsl(var(--chart-2))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="tidak_valid" name={t('dashboard.charts.invalid')} fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="belum" name={t('dashboard.charts.notValidated')} fill="hsl(var(--muted-foreground))" stackId="a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -200,7 +202,7 @@ export default function Index() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Keluar Zona — 7 Hari Terakhir</CardTitle>
+              <CardTitle className="text-base">{t('dashboard.charts.exit7Days')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
@@ -209,9 +211,9 @@ export default function Index() {
                   <YAxis allowDecimals={false} fontSize={12} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="valid" name="Valid" fill="hsl(var(--chart-2))" stackId="a" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="tidak_valid" name="Tidak Valid" fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="belum" name="Belum Divalidasi" fill="hsl(var(--muted-foreground))" stackId="a" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="valid" name={t('dashboard.charts.valid')} fill="hsl(var(--chart-2))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="tidak_valid" name={t('dashboard.charts.invalid')} fill="hsl(var(--destructive))" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="belum" name={t('dashboard.charts.notValidated')} fill="hsl(var(--muted-foreground))" stackId="a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
