@@ -1,6 +1,7 @@
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions, type PageKey } from '@/hooks/usePermissions';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
@@ -12,39 +13,39 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface NavItem {
-  title: string;
+  titleKey: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
   pageKey: PageKey;
 }
 
-const navItems: { group: string; items: NavItem[] }[] = [
+const navItems: { groupKey: string; items: NavItem[] }[] = [
   {
-    group: 'Umum',
+    groupKey: 'sidebar.groups.general',
     items: [
-      { title: 'Dashboard', url: '/', icon: LayoutDashboard, pageKey: 'dashboard' },
+      { titleKey: 'sidebar.items.dashboard', url: '/', icon: LayoutDashboard, pageKey: 'dashboard' },
     ],
   },
   {
-    group: 'Admin — Konfigurasi',
+    groupKey: 'sidebar.groups.adminConfig',
     items: [
-      { title: 'Kelola Pekerja', url: '/workers', icon: Users, pageKey: 'workers' },
-      { title: 'Zona & Kamera', url: '/zones', icon: MapPin, pageKey: 'zones' },
-      { title: 'Kelola Pengguna', url: '/users', icon: Shield, pageKey: 'users' },
-      { title: 'Kelola Role', url: '/roles', icon: KeyRound, pageKey: 'roles' },
-      { title: 'Simulasi Deteksi', url: '/simulate', icon: ScanSearch, pageKey: 'simulate' },
+      { titleKey: 'sidebar.items.workers', url: '/workers', icon: Users, pageKey: 'workers' },
+      { titleKey: 'sidebar.items.zones', url: '/zones', icon: MapPin, pageKey: 'zones' },
+      { titleKey: 'sidebar.items.users', url: '/users', icon: Shield, pageKey: 'users' },
+      { titleKey: 'sidebar.items.roles', url: '/roles', icon: KeyRound, pageKey: 'roles' },
+      { titleKey: 'sidebar.items.simulate', url: '/simulate', icon: ScanSearch, pageKey: 'simulate' },
     ],
   },
   {
-    group: 'Operator — Monitoring',
+    groupKey: 'sidebar.groups.operator',
     items: [
-      { title: 'Validasi Operator', url: '/operator-validation', icon: ClipboardCheck, pageKey: 'operator-validation' },
+      { titleKey: 'sidebar.items.operatorValidation', url: '/operator-validation', icon: ClipboardCheck, pageKey: 'operator-validation' },
     ],
   },
   {
-    group: 'Supervisor',
+    groupKey: 'sidebar.groups.supervisor',
     items: [
-      { title: 'Validasi Supervisor', url: '/supervisor-validation', icon: ClipboardCheck, pageKey: 'supervisor-validation' },
+      { titleKey: 'sidebar.items.supervisorValidation', url: '/supervisor-validation', icon: ClipboardCheck, pageKey: 'supervisor-validation' },
     ],
   },
 ];
@@ -54,6 +55,7 @@ export function AppSidebar() {
   const { canView } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useTranslation();
 
   const filteredNav = navItems
     .map((group) => ({
@@ -75,9 +77,9 @@ export function AppSidebar() {
 
       <SidebarContent>
         {filteredNav.map((group) => (
-          <SidebarGroup key={group.group}>
+          <SidebarGroup key={group.groupKey}>
             <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider">
-              {group.group}
+              {t(group.groupKey)}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -86,10 +88,10 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={location.pathname === item.url}
                       onClick={() => navigate(item.url)}
-                      tooltip={item.title}
+                      tooltip={t(item.titleKey)}
                     >
                       <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <span>{t(item.titleKey)}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -111,7 +113,7 @@ export function AppSidebar() {
               <div className="flex-1 text-left">
                 <p className="text-xs font-medium truncate">{user?.email}</p>
                 <p className="text-[10px] text-sidebar-foreground/50 capitalize">
-                  {userRole?.replace('_', ' ') || 'No Role'}
+                  {userRole?.replace('_', ' ') || t('sidebar.noRole')}
                 </p>
               </div>
               <ChevronDown className="h-3 w-3 text-sidebar-foreground/50" />
@@ -120,7 +122,7 @@ export function AppSidebar() {
           <DropdownMenuContent side="top" className="w-56">
             <DropdownMenuItem onClick={() => { signOut(); navigate('/auth'); }}>
               <LogOut className="mr-2 h-4 w-4" />
-              Keluar
+              {t('sidebar.logout')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -16,18 +16,13 @@ import { Plus, Pencil, Trash2, Loader2, ChevronDown, Camera, MapPin } from 'luci
 import { useToast } from '@/hooks/use-toast';
 import { usePermissions } from '@/hooks/usePermissions';
 import { REGEX_ZONE_NAME, validateField } from '@/lib/validation';
+import { useTranslation, Trans } from 'react-i18next';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Zone = Tables<'zones'>;
 type CameraRow = Tables<'cameras'>;
 
-const PPE_ITEMS = [
-  { key: 'HEAD_COVER', label: 'Helm' },
-  { key: 'HAND_COVER', label: 'Sarung Tangan' },
-  { key: 'SAFETY_GLASSES', label: 'Kacamata Safety' },
-  { key: 'SAFETY_SHOES', label: 'Sepatu Safety' },
-  { key: 'REFLECTIVE_VEST', label: 'Rompi Reflektif' },
-];
+const PPE_KEYS = ['HEAD_COVER', 'HAND_COVER', 'SAFETY_GLASSES', 'SAFETY_SHOES', 'REFLECTIVE_VEST'] as const;
 const JABATAN_OPTIONS = ['Mekanik', 'Operator Alat Berat', 'Supervisor Lapangan', 'Helper', 'Driver', 'Welder', 'Electrician'];
 
 interface PpeMatrix { [key: string]: boolean }
@@ -37,6 +32,7 @@ export default function Zones() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { canEdit, canDelete } = usePermissions();
+  const { t } = useTranslation();
   const hasEdit = canEdit('zones');
   const hasDelete = canDelete('zones');
 
@@ -87,14 +83,14 @@ export default function Zones() {
         if (error) throw error;
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones'] }); setZoneDialog(false); setEditingZone(null); toast({ title: 'Zona disimpan' }); },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones'] }); setZoneDialog(false); setEditingZone(null); toast({ title: t('zones.toast.zoneSaved') }); },
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   const deleteZoneMut = useMutation({
     mutationFn: async (id: string) => { const { error } = await supabase.from('zones').delete().eq('id', id); if (error) throw error; },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones'] }); setDeleteZone(null); toast({ title: 'Zona dihapus' }); },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones'] }); setDeleteZone(null); toast({ title: t('zones.toast.zoneDeleted') }); },
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   const saveCamMut = useMutation({
@@ -121,13 +117,13 @@ export default function Zones() {
         await (supabase.from('zone_ppe_rules').delete() as any).eq('camera_id', camId);
         if (camForm.jenis_pelanggaran === 'APD_TIDAK_LENGKAP') {
           const rules: any[] = [];
-          PPE_ITEMS.forEach(item => {
-            if (generalPpe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: null });
+          PPE_KEYS.forEach(key => {
+            if (generalPpe[key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: key, is_required: true, jabatan: null });
           });
           if (perJabatanEnabled) {
             jabatanPpeList.forEach(jp => {
-              PPE_ITEMS.forEach(item => {
-                if (jp.ppe[item.key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: item.key, is_required: true, jabatan: jp.jabatan });
+              PPE_KEYS.forEach(key => {
+                if (jp.ppe[key]) rules.push({ zone_id: camForm.zone_id, camera_id: camId, ppe_item: key, is_required: true, jabatan: jp.jabatan });
               });
             });
           }
@@ -138,14 +134,14 @@ export default function Zones() {
         }
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); qc.invalidateQueries({ queryKey: ['ppe-rules'] }); setCamDialog(false); setEditingCam(null); toast({ title: 'Kamera disimpan' }); },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); qc.invalidateQueries({ queryKey: ['ppe-rules'] }); setCamDialog(false); setEditingCam(null); toast({ title: t('zones.toast.cameraSaved') }); },
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   const deleteCamMut = useMutation({
     mutationFn: async (id: string) => { const { error } = await supabase.from('cameras').delete().eq('id', id); if (error) throw error; },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); setDeleteCam(null); toast({ title: 'Kamera dihapus' }); },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cameras'] }); setDeleteCam(null); toast({ title: t('zones.toast.cameraDeleted') }); },
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   const toggleCam = useMutation({
@@ -182,13 +178,13 @@ export default function Zones() {
   const addJabatanPpe = () => setJabatanPpeList(prev => [...prev, { jabatan: '', ppe: {} }]);
 
   return (
-    <AppLayout title="Zona & Kamera">
+    <AppLayout title={t('zones.title')}>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{zones.length} zona terdaftar</p>
+          <p className="text-sm text-muted-foreground">{t('zones.registered', { count: zones.length })}</p>
           {hasEdit && (
             <Button size="sm" onClick={() => { setEditingZone(null); setZoneForm({ name: '', description: '' }); setZoneDialog(true); }}>
-              <Plus className="mr-1 h-4 w-4" />Tambah Zona
+              <Plus className="mr-1 h-4 w-4" />{t('zones.addZone')}
             </Button>
           )}
         </div>
@@ -228,24 +224,24 @@ export default function Zones() {
                 <CollapsibleContent>
                   <div className="border-t px-4 pb-4 pt-2">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-medium text-muted-foreground uppercase">Kamera di zona ini</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase">{t('zones.camerasInZone')}</p>
                       {hasEdit && (
                         <Button variant="outline" size="sm" onClick={() => openCamDialog(zone.id)}>
-                          <Plus className="mr-1 h-3 w-3" />Tambah Kamera
+                          <Plus className="mr-1 h-3 w-3" />{t('zones.addCamera')}
                         </Button>
                       )}
                     </div>
                     {zoneCams.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-2">Belum ada kamera</p>
+                      <p className="text-sm text-muted-foreground py-2">{t('zones.noCameras')}</p>
                     ) : (
                       <Table>
-                        <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>RTSP URL</TableHead><TableHead>Jenis Pelanggaran</TableHead><TableHead>Aktif</TableHead>{(hasEdit || hasDelete) && <TableHead className="w-[60px]" />}</TableRow></TableHeader>
+                        <TableHeader><TableRow><TableHead>{t('zones.table.name')}</TableHead><TableHead>{t('zones.table.rtsp')}</TableHead><TableHead>{t('zones.table.violationType')}</TableHead><TableHead>{t('zones.table.active')}</TableHead>{(hasEdit || hasDelete) && <TableHead className="w-[60px]" />}</TableRow></TableHeader>
                         <TableBody>
                           {zoneCams.map(cam => (
                             <TableRow key={cam.id}>
                               <TableCell className="font-medium">{cam.name}</TableCell>
                               <TableCell className="font-mono text-xs max-w-[200px] truncate">{cam.rtsp_url || '-'}</TableCell>
-                              <TableCell><Badge variant="outline" className="capitalize">{(cam as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'}</Badge></TableCell>
+                              <TableCell><Badge variant="outline">{t(`zones.violationTypes.${(cam as any).jenis_pelanggaran || 'APD_TIDAK_LENGKAP'}`)}</Badge></TableCell>
                               <TableCell><Switch checked={cam.is_active} onCheckedChange={v => toggleCam.mutate({ id: cam.id, active: v })} disabled={!hasEdit} /></TableCell>
                               {(hasEdit || hasDelete) && (
                                 <TableCell>
@@ -268,66 +264,63 @@ export default function Zones() {
         })}
       </div>
 
-      {/* Zone Dialog */}
       <Dialog open={zoneDialog} onOpenChange={setZoneDialog}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editingZone ? 'Edit Zona' : 'Tambah Zona'}</DialogTitle><DialogDescription>Kelola informasi zona.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingZone ? t('zones.zoneDialog.editTitle') : t('zones.zoneDialog.addTitle')}</DialogTitle><DialogDescription>{t('zones.zoneDialog.desc')}</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label>Nama Zona <span className="text-destructive">*</span></Label>
+              <Label>{t('zones.zoneDialog.name')} <span className="text-destructive">*</span></Label>
               <Input value={zoneForm.name} onChange={e => setZoneForm({ ...zoneForm, name: e.target.value })} maxLength={100} />
-              {zoneForm.name && !zoneNameValid && <p className="text-xs text-destructive">Nama zona hanya boleh mengandung huruf, angka, dan -</p>}
+              {zoneForm.name && !zoneNameValid && <p className="text-xs text-destructive">{t('validationErrors.zoneName')}</p>}
               <p className="text-xs text-muted-foreground text-right">{zoneForm.name.length}/100</p>
             </div>
             <div className="grid gap-2">
-              <Label>Deskripsi</Label>
+              <Label>{t('zones.zoneDialog.description')}</Label>
               <Input value={zoneForm.description} onChange={e => setZoneForm({ ...zoneForm, description: e.target.value })} maxLength={250} />
               <p className="text-xs text-muted-foreground text-right">{zoneForm.description.length}/250</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setZoneDialog(false)}>Batal</Button>
-            <Button onClick={() => saveZoneMut.mutate()} disabled={saveZoneMut.isPending || !zoneForm.name || !zoneNameValid}>Simpan</Button>
+            <Button variant="outline" onClick={() => setZoneDialog(false)}>{t('common.cancel')}</Button>
+            <Button onClick={() => saveZoneMut.mutate()} disabled={saveZoneMut.isPending || !zoneForm.name || !zoneNameValid}>{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Camera Dialog */}
       <Dialog open={camDialog} onOpenChange={setCamDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editingCam ? 'Edit Kamera' : 'Tambah Kamera'}</DialogTitle><DialogDescription>Kelola kamera dan konfigurasi deteksi.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingCam ? t('zones.cameraDialog.editTitle') : t('zones.cameraDialog.addTitle')}</DialogTitle><DialogDescription>{t('zones.cameraDialog.desc')}</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label>Nama Kamera <span className="text-destructive">*</span></Label>
+              <Label>{t('zones.cameraDialog.name')} <span className="text-destructive">*</span></Label>
               <Input value={camForm.name} onChange={e => setCamForm({ ...camForm, name: e.target.value })} maxLength={100} />
               <p className="text-xs text-muted-foreground text-right">{camForm.name.length}/100</p>
             </div>
             <div className="grid gap-2">
-              <Label>RTSP URL <span className="text-destructive">*</span></Label>
+              <Label>{t('zones.cameraDialog.rtsp')} <span className="text-destructive">*</span></Label>
               <Input value={camForm.rtsp_url} onChange={e => setCamForm({ ...camForm, rtsp_url: e.target.value })} placeholder="rtsp://..." maxLength={500} />
               <p className="text-xs text-muted-foreground text-right">{camForm.rtsp_url.length}/500</p>
             </div>
             <div className="grid gap-2">
-              <Label>Jenis Pelanggaran yang Dideteksi</Label>
+              <Label>{t('zones.cameraDialog.violationType')}</Label>
               <Select value={camForm.jenis_pelanggaran} onValueChange={v => setCamForm({ ...camForm, jenis_pelanggaran: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="APD_TIDAK_LENGKAP">APD Tidak Lengkap</SelectItem>
-                  <SelectItem value="KELUAR_TANPA_IZIN">Keluar Zona</SelectItem>
+                  <SelectItem value="APD_TIDAK_LENGKAP">{t('zones.violationTypes.APD_TIDAK_LENGKAP')}</SelectItem>
+                  <SelectItem value="KELUAR_TANPA_IZIN">{t('zones.violationTypes.KELUAR_TANPA_IZIN')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Conditional: APD Matrix */}
             {camForm.jenis_pelanggaran === 'APD_TIDAK_LENGKAP' && (
               <>
                 <div className="border-t pt-3">
-                  <Label className="font-medium">Matrix APD (General)</Label>
+                  <Label className="font-medium">{t('zones.cameraDialog.matrixGeneral')}</Label>
                   <div className="grid gap-2 mt-2">
-                    {PPE_ITEMS.map(item => (
-                      <div key={item.key} className="flex items-center justify-between">
-                        <span className="text-sm">{item.label}</span>
-                        <Switch checked={!!generalPpe[item.key]} onCheckedChange={v => setGeneralPpe(prev => ({ ...prev, [item.key]: v }))} />
+                    {PPE_KEYS.map(key => (
+                      <div key={key} className="flex items-center justify-between">
+                        <span className="text-sm">{t(`zones.ppe.${key}`)}</span>
+                        <Switch checked={!!generalPpe[key]} onCheckedChange={v => setGeneralPpe(prev => ({ ...prev, [key]: v }))} />
                       </div>
                     ))}
                   </div>
@@ -335,7 +328,7 @@ export default function Zones() {
 
                 <div className="border-t pt-3">
                   <div className="flex items-center justify-between">
-                    <Label className="font-medium">APD Berbeda per Jabatan</Label>
+                    <Label className="font-medium">{t('zones.cameraDialog.perJabatan')}</Label>
                     <Switch checked={perJabatanEnabled} onCheckedChange={setPerJabatanEnabled} />
                   </div>
                   {perJabatanEnabled && (
@@ -346,37 +339,36 @@ export default function Zones() {
                             <Select value={jp.jabatan} onValueChange={v => {
                               const updated = [...jabatanPpeList]; updated[idx] = { ...updated[idx], jabatan: v }; setJabatanPpeList(updated);
                             }}>
-                              <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
+                              <SelectTrigger><SelectValue placeholder={t('zones.cameraDialog.selectJabatan')} /></SelectTrigger>
                               <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
                             </Select>
-                            {PPE_ITEMS.map(item => (
-                              <div key={item.key} className="flex items-center justify-between">
-                                <span className="text-xs">{item.label}</span>
-                                <Switch checked={!!jp.ppe[item.key]} onCheckedChange={v => {
+                            {PPE_KEYS.map(key => (
+                              <div key={key} className="flex items-center justify-between">
+                                <span className="text-xs">{t(`zones.ppe.${key}`)}</span>
+                                <Switch checked={!!jp.ppe[key]} onCheckedChange={v => {
                                   const updated = [...jabatanPpeList];
-                                  updated[idx] = { ...updated[idx], ppe: { ...updated[idx].ppe, [item.key]: v } };
+                                  updated[idx] = { ...updated[idx], ppe: { ...updated[idx].ppe, [key]: v } };
                                   setJabatanPpeList(updated);
                                 }} />
                               </div>
                             ))}
                             <Button variant="ghost" size="sm" className="text-destructive text-xs" onClick={() => setJabatanPpeList(prev => prev.filter((_, i) => i !== idx))}>
-                              Hapus Jabatan
+                              {t('zones.cameraDialog.removeJabatan')}
                             </Button>
                           </div>
                         </Card>
                       ))}
-                      <Button variant="outline" size="sm" onClick={addJabatanPpe}><Plus className="mr-1 h-3 w-3" />Tambah Jabatan</Button>
+                      <Button variant="outline" size="sm" onClick={addJabatanPpe}><Plus className="mr-1 h-3 w-3" />{t('zones.cameraDialog.addJabatan')}</Button>
                     </div>
                   )}
                 </div>
               </>
             )}
 
-            {/* Conditional: Waktu Kamera Off for Keluar Tanpa Izin */}
             {camForm.jenis_pelanggaran === 'KELUAR_TANPA_IZIN' && (
               <div className="border-t pt-3">
                 <div className="flex items-center justify-between">
-                  <Label className="font-medium">Waktu Kamera Off (Tidak Mendeteksi)</Label>
+                  <Label className="font-medium">{t('zones.cameraDialog.offTime')}</Label>
                   <Switch checked={offTimeEnabled} onCheckedChange={v => {
                     setOffTimeEnabled(v);
                     if (!v) setCamForm({ ...camForm, off_time_start: '', off_time_end: '' });
@@ -384,31 +376,29 @@ export default function Zones() {
                 </div>
                 {offTimeEnabled && (
                   <div className="grid grid-cols-2 gap-4 mt-2">
-                    <div className="grid gap-2"><Label className="text-sm">Mulai</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
-                    <div className="grid gap-2"><Label className="text-sm">Selesai</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-sm">{t('zones.cameraDialog.start')}</Label><Input type="time" value={camForm.off_time_start} onChange={e => setCamForm({ ...camForm, off_time_start: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-sm">{t('zones.cameraDialog.end')}</Label><Input type="time" value={camForm.off_time_end} onChange={e => setCamForm({ ...camForm, off_time_end: e.target.value })} /></div>
                   </div>
                 )}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCamDialog(false)}>Batal</Button>
-            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name || !camForm.rtsp_url}>Simpan</Button>
+            <Button variant="outline" onClick={() => setCamDialog(false)}>{t('common.cancel')}</Button>
+            <Button onClick={() => saveCamMut.mutate()} disabled={saveCamMut.isPending || !camForm.name || !camForm.rtsp_url}>{t('common.save')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Zone */}
       <Dialog open={!!deleteZone} onOpenChange={() => setDeleteZone(null)}>
-        <DialogContent><DialogHeader><DialogTitle>Hapus Zona</DialogTitle><DialogDescription>Yakin hapus zona <strong>{deleteZone?.name}</strong>?</DialogDescription></DialogHeader>
-          <DialogFooter><Button variant="outline" onClick={() => setDeleteZone(null)}>Batal</Button><Button variant="destructive" onClick={() => deleteZone && deleteZoneMut.mutate(deleteZone.id)}>Hapus</Button></DialogFooter>
+        <DialogContent><DialogHeader><DialogTitle>{t('zones.deleteZone')}</DialogTitle><DialogDescription><Trans i18nKey="zones.deleteZoneConfirm" values={{ name: deleteZone?.name }} components={{ strong: <strong /> }} /></DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteZone(null)}>{t('common.cancel')}</Button><Button variant="destructive" onClick={() => deleteZone && deleteZoneMut.mutate(deleteZone.id)}>{t('common.delete')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Camera */}
       <Dialog open={!!deleteCam} onOpenChange={() => setDeleteCam(null)}>
-        <DialogContent><DialogHeader><DialogTitle>Hapus Kamera</DialogTitle><DialogDescription>Yakin hapus kamera <strong>{deleteCam?.name}</strong>?</DialogDescription></DialogHeader>
-          <DialogFooter><Button variant="outline" onClick={() => setDeleteCam(null)}>Batal</Button><Button variant="destructive" onClick={() => deleteCam && deleteCamMut.mutate(deleteCam.id)}>Hapus</Button></DialogFooter>
+        <DialogContent><DialogHeader><DialogTitle>{t('zones.deleteCamera')}</DialogTitle><DialogDescription><Trans i18nKey="zones.deleteCameraConfirm" values={{ name: deleteCam?.name }} components={{ strong: <strong /> }} /></DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteCam(null)}>{t('common.cancel')}</Button><Button variant="destructive" onClick={() => deleteCam && deleteCamMut.mutate(deleteCam.id)}>{t('common.delete')}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </AppLayout>

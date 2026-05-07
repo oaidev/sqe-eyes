@@ -8,9 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { LanguageToggle } from '@/components/layout/LanguageToggle';
+import { useTranslation } from 'react-i18next';
 
 const Auth = () => {
   const { user, loading, signIn } = useAuth();
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -25,16 +28,19 @@ const Auth = () => {
     try {
       const { error } = await signIn(email, password);
       if (error) throw error;
-      toast.success('Berhasil masuk!');
+      toast.success(t('auth.signedIn'));
     } catch (err: any) {
-      toast.error(err.message || 'Terjadi kesalahan');
+      toast.error(err.message || t('auth.errorGeneric'));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="absolute right-4 top-4">
+        <LanguageToggle />
+      </div>
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <img src="https://i.ibb.co.com/1fwm1sYL/logo-PROXIS-3x.png" alt="PROXIS" className="h-16 w-auto mx-auto" />
@@ -42,19 +48,19 @@ const Auth = () => {
 
         <Card className="border-border/50 shadow-sm">
           <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl">Masuk</CardTitle>
-            <CardDescription>Masukkan kredensial untuk mengakses sistem</CardDescription>
+            <CardTitle className="text-xl">{t('auth.title')}</CardTitle>
+            <CardDescription>{t('auth.description')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="nama@perusahaan.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Label htmlFor="email">{t('auth.email')}</Label>
+                <Input id="email" type="email" placeholder={t('auth.emailPlaceholder')} value={email} onChange={(e) => setEmail(e.target.value)} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t('auth.password')}</Label>
                 <div className="relative">
-                  <Input id="password" type={showPassword ? 'text' : 'password'} placeholder="Masukkan password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+                  <Input id="password" type={showPassword ? 'text' : 'password'} placeholder={t('auth.passwordPlaceholder')} value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
                   <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword(!showPassword)}>
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -62,17 +68,17 @@ const Auth = () => {
               </div>
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Masuk
+                {t('auth.signIn')}
               </Button>
               <p className="text-center text-xs text-muted-foreground pt-1">
-                Lupa password? Silakan hubungi Admin.
+                {t('auth.forgotPassword')}
               </p>
             </form>
           </CardContent>
         </Card>
 
         <p className="text-center text-xs text-muted-foreground">
-          © 2026 PT Semesta Quantum Eterniti
+          {t('auth.copyright')}
         </p>
       </div>
     </div>

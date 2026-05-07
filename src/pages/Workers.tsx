@@ -16,7 +16,9 @@ import { useToast } from '@/hooks/use-toast';
 import { EnrollFaceDialog } from '@/components/workers/EnrollFaceDialog';
 import { usePermissions } from '@/hooks/usePermissions';
 import { REGEX_NAME, REGEX_SID, validateField } from '@/lib/validation';
+import { useTranslation } from 'react-i18next';
 import type { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { Trans } from 'react-i18next';
 
 type Worker = Tables<'workers'>;
 
@@ -30,6 +32,7 @@ export default function Workers() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { canEdit, canDelete } = usePermissions();
+  const { t } = useTranslation();
   const hasEdit = canEdit('workers');
   const hasDelete = canDelete('workers');
 
@@ -80,11 +83,11 @@ export default function Workers() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workers'] });
       setDialogOpen(false); setEditing(null); setForm(emptyForm);
-      toast({ title: editing ? 'Pekerja diperbarui' : 'Pekerja ditambahkan' });
+      toast({ title: editing ? t('workers.toast.updated') : t('workers.toast.added') });
     },
     onError: (e: Error) => {
-      const msg = e.message?.includes('duplicate key') || e.message?.includes('unique constraint') ? 'SID sudah terdaftar' : e.message;
-      toast({ title: 'Error', description: msg, variant: 'destructive' });
+      const msg = e.message?.includes('duplicate key') || e.message?.includes('unique constraint') ? t('workers.toast.duplicateSid') : e.message;
+      toast({ title: t('common.error'), description: msg, variant: 'destructive' });
     },
   });
 
@@ -93,8 +96,8 @@ export default function Workers() {
       const { error } = await supabase.from('workers').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['workers'] }); setDeleteDialog(null); toast({ title: 'Pekerja dihapus' }); },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['workers'] }); setDeleteDialog(null); toast({ title: t('workers.toast.deleted') }); },
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   const downloadTemplate = () => {
@@ -119,29 +122,30 @@ export default function Workers() {
       const cols = lines[i].split(',').map(c => c.trim());
       const row: any = {};
       headers.forEach((h, idx) => { row[h] = cols[idx]; });
-      if (!row.sid || !row.nama || !row.jabatan || !row.departemen) { errors.push(`Baris ${i + 1}: Data tidak lengkap`); continue; }
-      if (!validateField(row.nama, REGEX_NAME)) { errors.push(`Baris ${i + 1}: Nama hanya boleh mengandung huruf`); continue; }
-      if (!validateField(row.sid, REGEX_SID)) { errors.push(`Baris ${i + 1}: SID tidak valid`); continue; }
-      if (existingSids.has(row.sid.toLowerCase())) { errors.push(`Baris ${i + 1}: SID sudah terdaftar`); continue; }
-      if (!JABATAN_OPTIONS.includes(row.jabatan)) { errors.push(`Baris ${i + 1}: Jabatan tidak terdaftar (${row.jabatan})`); continue; }
-      if (!DEPT_OPTIONS.includes(row.departemen)) { errors.push(`Baris ${i + 1}: Departemen tidak terdaftar (${row.departemen})`); continue; }
-      if (row.nama.length > 100) { errors.push(`Baris ${i + 1}: Nama harus kurang dari 100 karakter`); continue; }
+      const r = i + 1;
+      if (!row.sid || !row.nama || !row.jabatan || !row.departemen) { errors.push(t('workers.csvErrors.incomplete', { row: r })); continue; }
+      if (!validateField(row.nama, REGEX_NAME)) { errors.push(t('workers.csvErrors.nameInvalid', { row: r })); continue; }
+      if (!validateField(row.sid, REGEX_SID)) { errors.push(t('workers.csvErrors.sidInvalid', { row: r })); continue; }
+      if (existingSids.has(row.sid.toLowerCase())) { errors.push(t('workers.csvErrors.sidDuplicate', { row: r })); continue; }
+      if (!JABATAN_OPTIONS.includes(row.jabatan)) { errors.push(t('workers.csvErrors.jabatanInvalid', { row: r, value: row.jabatan })); continue; }
+      if (!DEPT_OPTIONS.includes(row.departemen)) { errors.push(t('workers.csvErrors.deptInvalid', { row: r, value: row.departemen })); continue; }
+      if (row.nama.length > 100) { errors.push(t('workers.csvErrors.nameTooLong', { row: r })); continue; }
       rows.push({ sid: row.sid, nama: row.nama, jabatan: row.jabatan, departemen: row.departemen, is_active: false });
     }
 
-    if (errors.length > 0) { toast({ title: 'Error Import', description: errors.join('\n'), variant: 'destructive' }); e.target.value = ''; return; }
-    if (rows.length === 0) { toast({ title: 'Error Import', description: 'CSV kosong atau format salah', variant: 'destructive' }); e.target.value = ''; return; }
+    if (errors.length > 0) { toast({ title: t('workers.toast.importError'), description: errors.join('\n'), variant: 'destructive' }); e.target.value = ''; return; }
+    if (rows.length === 0) { toast({ title: t('workers.toast.importError'), description: t('workers.toast.csvEmpty'), variant: 'destructive' }); e.target.value = ''; return; }
 
     setImportProgress({ current: 0, total: rows.length });
     let successCount = 0;
     for (let i = 0; i < rows.length; i++) {
       const { error } = await supabase.from('workers').insert(rows[i]);
-      if (error) { errors.push(`Baris ${i + 2}: ${error.message}`); } else { successCount++; }
+      if (error) { errors.push(`${i + 2}: ${error.message}`); } else { successCount++; }
       setImportProgress({ current: i + 1, total: rows.length });
     }
     setImportProgress(null);
-    if (errors.length > 0) { toast({ title: 'Error Import', description: `${successCount} berhasil, ${errors.length} gagal`, variant: 'destructive' }); }
-    else { toast({ title: `${successCount} pekerja diimport` }); }
+    if (errors.length > 0) { toast({ title: t('workers.toast.importError'), description: t('workers.toast.importSummary', { success: successCount, fail: errors.length }), variant: 'destructive' }); }
+    else { toast({ title: t('workers.toast.imported', { count: successCount }) }); }
     qc.invalidateQueries({ queryKey: ['workers'] });
     e.target.value = '';
   };
@@ -159,38 +163,38 @@ export default function Workers() {
   const formInvalid = saveMutation.isPending || (!editing && !form.sid) || !form.nama || !form.jabatan || !form.departemen || !namaValid || (!editing && !sidValid);
 
   return (
-    <AppLayout title="Kelola Pekerja">
+    <AppLayout title={t('workers.title')}>
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-2">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Cari nama atau SID..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder={t('workers.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={filterDept} onValueChange={setFilterDept}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Departemen" /></SelectTrigger>
+              <SelectTrigger className="w-[160px]"><SelectValue placeholder={t('workers.department')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua Dept</SelectItem>
+                <SelectItem value="all">{t('workers.allDepts')}</SelectItem>
                 {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-[140px]"><SelectValue placeholder={t('workers.status')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="active">Aktif</SelectItem>
-                <SelectItem value="inactive">Tidak Aktif</SelectItem>
+                <SelectItem value="all">{t('workers.allStatus')}</SelectItem>
+                <SelectItem value="active">{t('workers.active')}</SelectItem>
+                <SelectItem value="inactive">{t('workers.inactive')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           {hasEdit && (
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={downloadTemplate}><Download className="mr-1 h-4 w-4" />Template CSV</Button>
+              <Button variant="outline" size="sm" onClick={downloadTemplate}><Download className="mr-1 h-4 w-4" />{t('workers.templateCsv')}</Button>
               <label>
                 <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} disabled={!!importProgress} />
-                <Button variant="outline" size="sm" asChild disabled={!!importProgress}><span><Upload className="mr-1 h-4 w-4" />Import CSV</span></Button>
+                <Button variant="outline" size="sm" asChild disabled={!!importProgress}><span><Upload className="mr-1 h-4 w-4" />{t('workers.importCsv')}</span></Button>
               </label>
-              <Button size="sm" onClick={openAdd}><Plus className="mr-1 h-4 w-4" />Tambah Pekerja</Button>
+              <Button size="sm" onClick={openAdd}><Plus className="mr-1 h-4 w-4" />{t('workers.addWorker')}</Button>
             </div>
           )}
         </div>
@@ -198,7 +202,7 @@ export default function Workers() {
         {importProgress && (
           <div className="space-y-1">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Mengimport pekerja...</span>
+              <span>{t('workers.importing')}</span>
               <span>{importProgress.current}/{importProgress.total}</span>
             </div>
             <Progress value={(importProgress.current / importProgress.total) * 100} className="h-2" />
@@ -210,11 +214,11 @@ export default function Workers() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>SID</TableHead>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Jabatan</TableHead>
-                  <TableHead>Departemen</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t('workers.table.sid')}</TableHead>
+                  <TableHead>{t('workers.table.name')}</TableHead>
+                  <TableHead>{t('workers.table.jabatan')}</TableHead>
+                  <TableHead>{t('workers.table.departemen')}</TableHead>
+                  <TableHead>{t('workers.table.status')}</TableHead>
                   {(hasEdit || hasDelete) && <TableHead className="w-[80px]" />}
                 </TableRow>
               </TableHeader>
@@ -222,7 +226,7 @@ export default function Workers() {
                 {isLoading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Tidak ada data pekerja</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">{t('workers.empty')}</TableCell></TableRow>
                 ) : filtered.map(w => {
                   const faceUrl = faceMap.get(w.id);
                   return (
@@ -240,11 +244,11 @@ export default function Workers() {
                       </TableCell>
                       <TableCell>{w.jabatan}</TableCell>
                       <TableCell>{w.departemen}</TableCell>
-                      <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? 'Aktif' : 'Tidak Aktif'}</Badge></TableCell>
+                      <TableCell><Badge variant={w.is_active ? 'default' : 'secondary'}>{w.is_active ? t('workers.active') : t('workers.inactive')}</Badge></TableCell>
                       {(hasEdit || hasDelete) && (
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEnrollWorker(w)} title="Daftarkan Wajah"><Camera className="h-3.5 w-3.5" /></Button>}
+                            {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEnrollWorker(w)} title={t('workers.enrollFace')}><Camera className="h-3.5 w-3.5" /></Button>}
                             {hasEdit && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}><Pencil className="h-3.5 w-3.5" /></Button>}
                             {hasDelete && <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteDialog(w)}><Trash2 className="h-3.5 w-3.5" /></Button>}
                           </div>
@@ -259,79 +263,77 @@ export default function Workers() {
         </Card>
       </div>
 
-      {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? 'Edit Pekerja' : 'Tambah Pekerja'}</DialogTitle>
-            <DialogDescription>{editing ? 'Perbarui data pekerja.' : 'Isi data pekerja baru.'}</DialogDescription>
+            <DialogTitle>{editing ? t('workers.edit') : t('workers.addNew')}</DialogTitle>
+            <DialogDescription>{editing ? t('workers.editDesc') : t('workers.addDesc')}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             {!editing && (
               <div className="grid gap-2">
-                <Label>SID <span className="text-destructive">*</span></Label>
+                <Label>{t('workers.fields.sid')} <span className="text-destructive">*</span></Label>
                 <Input value={form.sid} onChange={e => setForm({ ...form, sid: e.target.value })} placeholder="SID-2024-001" maxLength={100} />
-                {form.sid && !sidValid && <p className="text-xs text-destructive">SID hanya boleh mengandung huruf, angka, dan karakter - _ /</p>}
+                {form.sid && !sidValid && <p className="text-xs text-destructive">{t('validationErrors.sid')}</p>}
                 <p className="text-xs text-muted-foreground text-right">{form.sid.length}/100</p>
               </div>
             )}
             <div className="grid gap-2">
-              <Label>Nama <span className="text-destructive">*</span></Label>
+              <Label>{t('workers.fields.nama')} <span className="text-destructive">*</span></Label>
               <Input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })} maxLength={100} />
-              {form.nama && !namaValid && <p className="text-xs text-destructive">Nama hanya boleh mengandung huruf</p>}
+              {form.nama && !namaValid && <p className="text-xs text-destructive">{t('validationErrors.name')}</p>}
               <p className="text-xs text-muted-foreground text-right">{form.nama.length}/100</p>
             </div>
             <div className="grid gap-2">
-              <Label>Jabatan <span className="text-destructive">*</span></Label>
+              <Label>{t('workers.fields.jabatan')} <span className="text-destructive">*</span></Label>
               <Select value={form.jabatan} onValueChange={v => setForm({ ...form, jabatan: v })}>
-                <SelectTrigger><SelectValue placeholder="Pilih jabatan" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('workers.fields.selectJabatan')} /></SelectTrigger>
                 <SelectContent>{JABATAN_OPTIONS.map(j => <SelectItem key={j} value={j}>{j}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>Departemen <span className="text-destructive">*</span></Label>
+              <Label>{t('workers.fields.departemen')} <span className="text-destructive">*</span></Label>
               <Select value={form.departemen} onValueChange={v => setForm({ ...form, departemen: v })}>
-                <SelectTrigger><SelectValue placeholder="Pilih departemen" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t('workers.fields.selectDept')} /></SelectTrigger>
                 <SelectContent>{DEPT_OPTIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Batal</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t('common.cancel')}</Button>
             <Button onClick={() => saveMutation.mutate(form)} disabled={formInvalid}>
               {saveMutation.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              Simpan
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
       <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Hapus Pekerja</DialogTitle>
-            <DialogDescription>Yakin ingin menghapus <strong>{deleteDialog?.nama}</strong> ({deleteDialog?.sid})?</DialogDescription>
+            <DialogTitle>{t('workers.deleteTitle')}</DialogTitle>
+            <DialogDescription>
+              <Trans i18nKey="workers.deleteConfirm" values={{ name: deleteDialog?.nama, sid: deleteDialog?.sid }} components={{ strong: <strong /> }} />
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialog(null)}>Batal</Button>
+            <Button variant="outline" onClick={() => setDeleteDialog(null)}>{t('common.cancel')}</Button>
             <Button variant="destructive" onClick={() => deleteDialog && deleteMutation.mutate(deleteDialog.id)} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-              Hapus
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Photo Preview */}
       <Dialog open={!!photoPreview} onOpenChange={() => setPhotoPreview(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Foto Wajah</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('workers.photoTitle')}</DialogTitle></DialogHeader>
           {photoPreview && <img src={photoPreview} alt="Face" className="w-full rounded-lg" />}
         </DialogContent>
       </Dialog>
 
-      {/* Enroll Face Dialog */}
       <EnrollFaceDialog worker={enrollWorker} open={!!enrollWorker} onOpenChange={(v) => { if (!v) setEnrollWorker(null); }} />
     </AppLayout>
   );

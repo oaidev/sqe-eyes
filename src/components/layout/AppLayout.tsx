@@ -5,6 +5,7 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/s
 import { AppSidebar } from './AppSidebar';
 import { Separator } from '@/components/ui/separator';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { LanguageToggle } from './LanguageToggle';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -25,6 +26,9 @@ export function AppLayout({ children, title }: AppLayoutProps) {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="h-5" />
           <h1 className="text-sm font-semibold text-foreground">{title || 'Dashboard'}</h1>
+          <div className="ml-auto">
+            <LanguageToggle />
+          </div>
         </header>
         <main className="flex-1 p-4 md:p-6">
           {children}

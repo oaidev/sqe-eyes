@@ -8,18 +8,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from 'react-i18next';
 
 const ROLES = ['admin', 'operator', 'supervisor'] as const;
-const PAGES = [
-  { key: 'dashboard', label: 'Dashboard' },
-  { key: 'workers', label: 'Kelola Pekerja' },
-  { key: 'zones', label: 'Zona & Kamera' },
-  { key: 'users', label: 'Kelola Pengguna' },
-  { key: 'roles', label: 'Kelola Role' },
-  { key: 'simulate', label: 'Simulasi Deteksi' },
-  { key: 'operator-validation', label: 'Validasi Operator' },
-  { key: 'supervisor-validation', label: 'Validasi Supervisor' },
-];
+const PAGE_KEYS = ['dashboard', 'workers', 'zones', 'users', 'roles', 'simulate', 'operator-validation', 'supervisor-validation'] as const;
 
 const PAGE_TOGGLE_CONFIG: Record<string, { edit: boolean; delete: boolean }> = {
   dashboard: { edit: false, delete: false },
@@ -44,10 +36,11 @@ type PermRow = {
 export default function Roles() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { t } = useTranslation();
   const [localPerms, setLocalPerms] = useState<Record<string, PermRow>>({});
   const [dirty, setDirty] = useState(false);
 
-  const { data: perms = [], isLoading } = useQuery({
+  const { isLoading } = useQuery({
     queryKey: ['role-permissions'],
     queryFn: async () => {
       const { data, error } = await supabase.from('role_permissions').select('*');
@@ -72,11 +65,9 @@ export default function Roles() {
     const newValue = !current[field];
     const updated = { ...current, [field]: newValue };
 
-    // Auto-enable view when edit or delete is enabled
     if ((field === 'can_edit' || field === 'can_delete') && newValue) {
       updated.can_view = true;
     }
-    // Auto-disable edit and delete when view is disabled
     if (field === 'can_view' && !newValue) {
       updated.can_edit = false;
       updated.can_delete = false;
@@ -103,19 +94,19 @@ export default function Roles() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['role-permissions'] });
       setDirty(false);
-      toast({ title: 'Hak akses disimpan' });
+      toast({ title: t('roles.saved') });
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   return (
-    <AppLayout title="Kelola Role">
+    <AppLayout title={t('roles.title')}>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Atur hak akses menu per role</p>
+          <p className="text-sm text-muted-foreground">{t('roles.intro')}</p>
           <Button size="sm" disabled={!dirty || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
             {saveMutation.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
-            Simpan Perubahan
+            {t('common.saveChanges')}
           </Button>
         </div>
 
@@ -127,32 +118,32 @@ export default function Roles() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base capitalize flex items-center gap-2">
                   <Badge variant={role === 'admin' ? 'destructive' : role === 'operator' ? 'default' : 'secondary'}>
-                    {role}
+                    {t(`users.roles.${role}`)}
                   </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid gap-2">
                   <div className="grid grid-cols-[1fr,80px,80px,80px] gap-2 text-xs font-medium text-muted-foreground pb-1 border-b">
-                    <span>Menu</span>
-                    <span className="text-center">Lihat</span>
-                    <span className="text-center">Edit</span>
-                    <span className="text-center">Hapus</span>
+                    <span>{t('roles.menu')}</span>
+                    <span className="text-center">{t('roles.view')}</span>
+                    <span className="text-center">{t('roles.edit')}</span>
+                    <span className="text-center">{t('roles.delete')}</span>
                   </div>
-                  {PAGES.map(page => {
-                    const perm = getPerm(role, page.key);
+                  {PAGE_KEYS.map(pageKey => {
+                    const perm = getPerm(role, pageKey);
                     return (
-                      <div key={page.key} className="grid grid-cols-[1fr,80px,80px,80px] gap-2 items-center py-1">
-                        <span className="text-sm">{page.label}</span>
-                        <div className="flex justify-center"><Switch checked={perm.can_view} onCheckedChange={() => togglePerm(role, page.key, 'can_view')} /></div>
+                      <div key={pageKey} className="grid grid-cols-[1fr,80px,80px,80px] gap-2 items-center py-1">
+                        <span className="text-sm">{t(`roles.pages.${pageKey}`)}</span>
+                        <div className="flex justify-center"><Switch checked={perm.can_view} onCheckedChange={() => togglePerm(role, pageKey, 'can_view')} /></div>
                         <div className="flex justify-center">
-                          {PAGE_TOGGLE_CONFIG[page.key]?.edit !== false
-                            ? <Switch checked={perm.can_edit} onCheckedChange={() => togglePerm(role, page.key, 'can_edit')} />
+                          {PAGE_TOGGLE_CONFIG[pageKey]?.edit !== false
+                            ? <Switch checked={perm.can_edit} onCheckedChange={() => togglePerm(role, pageKey, 'can_edit')} />
                             : <span className="text-muted-foreground">—</span>}
                         </div>
                         <div className="flex justify-center">
-                          {PAGE_TOGGLE_CONFIG[page.key]?.delete !== false
-                            ? <Switch checked={perm.can_delete} onCheckedChange={() => togglePerm(role, page.key, 'can_delete')} />
+                          {PAGE_TOGGLE_CONFIG[pageKey]?.delete !== false
+                            ? <Switch checked={perm.can_delete} onCheckedChange={() => togglePerm(role, pageKey, 'can_delete')} />
                             : <span className="text-muted-foreground">—</span>}
                         </div>
                       </div>
