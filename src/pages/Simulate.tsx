@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -35,13 +36,15 @@ interface DetectionResult {
 
 const ALL_PPE_ITEMS = ['HEAD_COVER', 'HAND_COVER', 'SAFETY_GLASSES', 'SAFETY_SHOES', 'REFLECTIVE_VEST'] as const;
 
-const ppeLabel: Record<string, string> = {
-  HEAD_COVER: 'Helm', HAND_COVER: 'Sarung Tangan', SAFETY_GLASSES: 'Kacamata Safety',
-  SAFETY_SHOES: 'Sepatu Safety', REFLECTIVE_VEST: 'Rompi Reflektif',
-  FACE_COVER: 'Kacamata Safety',
+const PPE_KEYS: Record<string, string> = {
+  HEAD_COVER: 'HEAD_COVER', HAND_COVER: 'HAND_COVER', SAFETY_GLASSES: 'SAFETY_GLASSES',
+  SAFETY_SHOES: 'SAFETY_SHOES', REFLECTIVE_VEST: 'REFLECTIVE_VEST',
+  FACE_COVER: 'SAFETY_GLASSES',
 };
 
 export default function Simulate() {
+  const { t, i18n } = useTranslation();
+  const ppeLabel = (k: string) => t(`zones.ppe.${PPE_KEYS[k] || k}`, { defaultValue: k });
   const [detecting, setDetecting] = useState(false);
   const [results, setResults] = useState<DetectionResult[]>([]);
   const [autoCapture, setAutoCapture] = useState(false);
@@ -98,7 +101,7 @@ export default function Simulate() {
       if (webcamVideoRef.current) webcamVideoRef.current.srcObject = stream;
       setWebcamActive(true);
     } catch {
-      toast.error('Gagal mengakses kamera. Pastikan izin kamera diberikan.');
+      toast.error(t('simulate.toast.webcamFail'));
     }
   };
 
@@ -130,7 +133,7 @@ export default function Simulate() {
 
   const runDetection = useCallback(async (imageBase64: string) => {
     if (!selectedCameraId) {
-      toast.error('Pilih kamera terlebih dahulu');
+      toast.error(t('simulate.toast.selectFirst'));
       return;
     }
     setDetecting(true);
@@ -170,16 +173,16 @@ export default function Simulate() {
         }));
         setResults(prev => [...newResults, ...prev].slice(0, 20));
       }
-      toast.success(`Deteksi selesai — ${personResults.length || 1} orang terdeteksi`);
+      toast.success(t('simulate.toast.detectDone', { count: personResults.length || 1 }));
     } catch (err: any) {
-      toast.error(`Deteksi gagal: ${err.message}`);
+      toast.error(t('simulate.toast.detectFail', { err: err.message }));
     } finally { setDetecting(false); }
   }, [selectedCameraId]);
 
   const checkOffTimeAndRun = useCallback((imageBase64: string) => {
     const cam = cameras.find((c: any) => c.id === selectedCameraId);
     if (isInOffTime(cam)) {
-      toast.info(`Kamera sedang dalam waktu off (${cam.off_time_start?.substring(0,5)} - ${cam.off_time_end?.substring(0,5)}), deteksi dilewati`);
+      toast.info(t('simulate.toast.offTime', { start: cam.off_time_start?.substring(0,5), end: cam.off_time_end?.substring(0,5) }));
       return;
     }
     runDetection(imageBase64);
@@ -190,7 +193,7 @@ export default function Simulate() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error('Maks 5MB'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error(t('simulate.toast.max5MB')); return; }
     const reader = new FileReader();
     reader.onload = () => setUploadedImage(reader.result as string);
     reader.readAsDataURL(file);
@@ -200,7 +203,7 @@ export default function Simulate() {
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
-    if (file.size > 50 * 1024 * 1024) toast.warning('File > 50MB, mungkin lambat');
+    if (file.size > 50 * 1024 * 1024) toast.warning(t('simulate.toast.warn50MB'));
     setVideoSrc(URL.createObjectURL(file));
   };
 
@@ -246,28 +249,28 @@ export default function Simulate() {
   const selectedCamera = cameras.find((c: any) => c.id === selectedCameraId);
 
   return (
-    <AppLayout title="Simulasi Deteksi">
+    <AppLayout title={t('simulate.title')}>
       <div className="max-w-5xl mx-auto space-y-4">
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Camera selection */}
         <div className="grid gap-2">
-          <Label className="font-medium">Pilih Kamera (Wajib)</Label>
+          <Label className="font-medium">{t('simulate.selectCamera')}</Label>
           <Select value={selectedCameraId} onValueChange={setSelectedCameraId}>
             <SelectTrigger className="w-full max-w-sm">
-              <SelectValue placeholder="Pilih kamera..." />
+              <SelectValue placeholder={t('simulate.selectCameraPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {cameras.map((c: any) => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.name} — {(c as any).zones?.name || 'Tanpa Zona'} ({(c as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'})
+                  {c.name} — {(c as any).zones?.name || t('simulate.noZone')} ({t(`zones.violationTypes.${(c as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'KELUAR_TANPA_IZIN' : 'APD_TIDAK_LENGKAP'}`)})
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {selectedCamera && (
             <p className="text-xs text-muted-foreground">
-              Jenis deteksi: <Badge variant="outline" className="text-[10px]">{(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'Keluar Zona' : 'APD Tidak Lengkap'}</Badge>
+              {t('simulate.detectionType')} <Badge variant="outline" className="text-[10px]">{t(`zones.violationTypes.${(selectedCamera as any).jenis_pelanggaran === 'KELUAR_TANPA_IZIN' ? 'KELUAR_TANPA_IZIN' : 'APD_TIDAK_LENGKAP'}`)}</Badge>
             </p>
           )}
           {selectedCamera && (selectedCamera as any).jenis_pelanggaran !== 'KELUAR_TANPA_IZIN' && (
@@ -282,9 +285,9 @@ export default function Simulate() {
           {/* Left: input tabs */}
           <Tabs defaultValue="webcam" className="flex flex-col">
             <TabsList className="w-full">
-              <TabsTrigger value="webcam" className="flex-1 gap-1"><Camera className="h-3.5 w-3.5" />Webcam</TabsTrigger>
-              <TabsTrigger value="image" className="flex-1 gap-1"><Upload className="h-3.5 w-3.5" />Gambar</TabsTrigger>
-              <TabsTrigger value="video" className="flex-1 gap-1"><Video className="h-3.5 w-3.5" />Video</TabsTrigger>
+              <TabsTrigger value="webcam" className="flex-1 gap-1"><Camera className="h-3.5 w-3.5" />{t('simulate.tabs.webcam')}</TabsTrigger>
+              <TabsTrigger value="image" className="flex-1 gap-1"><Upload className="h-3.5 w-3.5" />{t('simulate.tabs.image')}</TabsTrigger>
+              <TabsTrigger value="video" className="flex-1 gap-1"><Video className="h-3.5 w-3.5" />{t('simulate.tabs.video')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="webcam" className="flex-1 space-y-3">
@@ -293,19 +296,19 @@ export default function Simulate() {
                   <video ref={webcamVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                 ) : (
                   <div className="text-center text-muted-foreground">
-                    <Camera className="h-12 w-12 mx-auto mb-2" /><p className="text-sm">Klik tombol di bawah untuk mulai</p>
+                    <Camera className="h-12 w-12 mx-auto mb-2" /><p className="text-sm">{t('simulate.webcam.startHint')}</p>
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {!webcamActive ? (
-                  <Button onClick={startWebcam} size="sm">Mulai Webcam</Button>
+                  <Button onClick={startWebcam} size="sm">{t('simulate.webcam.start')}</Button>
                 ) : (
                   <>
                     <Button onClick={handleWebcamCapture} size="sm" disabled={detecting || !selectedCameraId}>
-                      {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capture & Detect'}
+                      {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('simulate.webcam.captureDetect')}
                     </Button>
-                    <Button onClick={stopWebcam} size="sm" variant="outline">Stop</Button>
+                    <Button onClick={stopWebcam} size="sm" variant="outline">{t('simulate.webcam.stop')}</Button>
                   </>
                 )}
               </div>
@@ -313,20 +316,20 @@ export default function Simulate() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
                     <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
-                    <Label className="text-sm">Auto-capture</Label>
+                    <Label className="text-sm">{t('simulate.autoCapture')}</Label>
                     <Select value={captureMode} onValueChange={(v: 'interval' | 'smart') => setCaptureMode(v)} disabled={!autoCapture}>
                       <SelectTrigger className="w-32 h-7 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="interval">Interval</SelectItem>
-                        <SelectItem value="smart">Smart (Motion)</SelectItem>
+                        <SelectItem value="interval">{t('simulate.interval')}</SelectItem>
+                        <SelectItem value="smart">{t('simulate.smart')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   {autoCapture && captureMode === 'interval' && (
                     <div className="flex items-center gap-3 ml-14">
-                      <Label className="text-xs">Setiap</Label>
+                      <Label className="text-xs">{t('simulate.every')}</Label>
                       <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
                       <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
                     </div>
@@ -334,9 +337,9 @@ export default function Simulate() {
                   {autoCapture && captureMode === 'smart' && (
                     <div className="flex items-center gap-2 ml-14">
                       {motionDetected ? (
-                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />Gerakan terdeteksi!</Badge>
+                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />{t('simulate.motionDetected')}</Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />Menunggu gerakan...</Badge>
+                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />{t('simulate.waitingMotion')}</Badge>
                       )}
                     </div>
                   )}
@@ -350,16 +353,16 @@ export default function Simulate() {
                   <img src={uploadedImage} alt="Upload" className="w-full h-full object-contain" />
                 ) : (
                   <div className="text-center text-muted-foreground cursor-pointer" onClick={() => imageInputRef.current?.click()}>
-                    <Upload className="h-12 w-12 mx-auto mb-2" /><p className="text-sm">Klik untuk upload gambar (JPG/PNG, maks 5MB)</p>
+                    <Upload className="h-12 w-12 mx-auto mb-2" /><p className="text-sm">{t('simulate.image.hint')}</p>
                   </div>
                 )}
               </div>
               <input ref={imageInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleImageUpload} />
               <div className="flex items-center gap-2">
-                <Button onClick={() => imageInputRef.current?.click()} size="sm" variant="outline">Pilih Gambar</Button>
+                <Button onClick={() => imageInputRef.current?.click()} size="sm" variant="outline">{t('simulate.image.select')}</Button>
                 {uploadedImage && (
                   <Button onClick={handleImageDetect} size="sm" disabled={detecting || !selectedCameraId}>
-                    {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Detect'}
+                    {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('simulate.image.detect')}
                   </Button>
                 )}
               </div>
@@ -371,16 +374,16 @@ export default function Simulate() {
                   <video ref={videoRef} src={videoSrc} controls className="w-full h-full object-contain" />
                 ) : (
                   <div className="text-center text-muted-foreground cursor-pointer" onClick={() => videoInputRef.current?.click()}>
-                    <Video className="h-12 w-12 mx-auto mb-2" /><p className="text-sm">Klik untuk upload video (MP4/WebM, maks 50MB)</p>
+                    <Video className="h-12 w-12 mx-auto mb-2" /><p className="text-sm">{t('simulate.video.hint')}</p>
                   </div>
                 )}
               </div>
               <input ref={videoInputRef} type="file" accept="video/mp4,video/webm" className="hidden" onChange={handleVideoUpload} />
               <div className="flex items-center gap-2 flex-wrap">
-                <Button onClick={() => videoInputRef.current?.click()} size="sm" variant="outline">Pilih Video</Button>
+                <Button onClick={() => videoInputRef.current?.click()} size="sm" variant="outline">{t('simulate.video.select')}</Button>
                 {videoSrc && (
                   <Button onClick={handleVideoCapture} size="sm" disabled={detecting || !selectedCameraId}>
-                    {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Capture Frame & Detect'}
+                    {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('simulate.video.captureDetect')}
                   </Button>
                 )}
               </div>
@@ -388,20 +391,20 @@ export default function Simulate() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-3">
                     <Switch checked={autoCapture} onCheckedChange={setAutoCapture} disabled={!selectedCameraId} />
-                    <Label className="text-sm">Auto-capture</Label>
+                    <Label className="text-sm">{t('simulate.autoCapture')}</Label>
                     <Select value={captureMode} onValueChange={(v: 'interval' | 'smart') => setCaptureMode(v)} disabled={!autoCapture}>
                       <SelectTrigger className="w-32 h-7 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="interval">Interval</SelectItem>
-                        <SelectItem value="smart">Smart (Motion)</SelectItem>
+                        <SelectItem value="interval">{t('simulate.interval')}</SelectItem>
+                        <SelectItem value="smart">{t('simulate.smart')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   {autoCapture && captureMode === 'interval' && (
                     <div className="flex items-center gap-3 ml-14">
-                      <Label className="text-xs">Setiap</Label>
+                      <Label className="text-xs">{t('simulate.every')}</Label>
                       <div className="w-32"><Slider min={3} max={10} step={1} value={[autoCaptureInterval]} onValueChange={([v]) => setAutoCaptureInterval(v)} /></div>
                       <span className="text-xs text-muted-foreground">{autoCaptureInterval}s</span>
                     </div>
@@ -409,9 +412,9 @@ export default function Simulate() {
                   {autoCapture && captureMode === 'smart' && (
                     <div className="flex items-center gap-2 ml-14">
                       {motionDetected ? (
-                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />Gerakan terdeteksi!</Badge>
+                        <Badge variant="default" className="text-[10px] gap-1 animate-pulse"><Eye className="h-3 w-3" />{t('simulate.motionDetected')}</Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />Menunggu gerakan...</Badge>
+                        <Badge variant="secondary" className="text-[10px] gap-1"><EyeOff className="h-3 w-3" />{t('simulate.waitingMotion')}</Badge>
                       )}
                     </div>
                   )}
@@ -423,7 +426,7 @@ export default function Simulate() {
           {/* Bounding box overlay - shown after detection */}
           {lastCapturedImage && results.length > 0 && (
             <div className="md:col-span-2">
-              <h3 className="font-semibold text-sm mb-2">Hasil Visual Deteksi</h3>
+              <h3 className="font-semibold text-sm mb-2">{t('simulate.visualResults')}</h3>
               <BoundingBoxOverlay
                 imageSrc={lastCapturedImage}
                 persons={results
@@ -435,13 +438,13 @@ export default function Simulate() {
                         boundingBox: r.boundingBox,
                         workerName: r.worker?.nama || null,
                         hasViolation: r.alert_created,
-                        ppeStatus: r.alert_created ? 'Keluar Tanpa Izin' : 'Izin Keluar',
+                        ppeStatus: r.alert_created ? t('simulate.exitNoPermission') : t('simulate.permissionGranted'),
                         personIndex: r.personIndex,
                       };
                     }
                     const hasPpeViolation = Object.values(r.ppe_results).some(v => !v.detected);
                     const ppeItems = Object.entries(r.ppe_results)
-                      .map(([k, v]) => `${ppeLabel[k] || k} ${v.detected ? '✓' : '✗'}`)
+                      .map(([k, v]) => `${ppeLabel(k)} ${v.detected ? '✓' : '✗'}`)
                       .join(', ');
                     return {
                       boundingBox: r.boundingBox,
@@ -457,9 +460,9 @@ export default function Simulate() {
 
           {/* Right: results panel */}
           <div className="space-y-3">
-            <h3 className="font-semibold text-sm">Hasil Deteksi</h3>
+            <h3 className="font-semibold text-sm">{t('simulate.results')}</h3>
             {results.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Belum ada deteksi. Pilih kamera lalu capture frame untuk memulai.</p>
+              <p className="text-xs text-muted-foreground">{t('simulate.noResults')}</p>
             ) : (
               <ScrollArea className="h-[400px]">
                 <div className="space-y-2 pr-2">
@@ -469,10 +472,10 @@ export default function Simulate() {
                         {/* Person index badge */}
                         <div className="flex items-center justify-between">
                           <Badge variant="outline" className="text-[10px] font-bold">
-                            Person {r.personIndex}
+                            {t('simulate.person', { n: r.personIndex })}
                           </Badge>
                           <p className="text-[10px] text-muted-foreground">
-                            {r.timestamp.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}, {r.timestamp.toLocaleTimeString('id-ID')}
+                            {r.timestamp.toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}, {r.timestamp.toLocaleTimeString(i18n.language === 'en' ? 'en-US' : 'id-ID')}
                           </p>
                         </div>
 
@@ -484,12 +487,12 @@ export default function Simulate() {
                               <p className="text-sm font-medium">SID: {r.worker.sid} — {r.worker.nama}</p>
                             </>
                           ) : (
-                            <><UserX className="h-4 w-4 text-destructive shrink-0" /><p className="text-sm text-muted-foreground">Tidak Dikenal</p></>
+                            <><UserX className="h-4 w-4 text-destructive shrink-0" /><p className="text-sm text-muted-foreground">{t('simulate.unknown')}</p></>
                           )}
                         </div>
 
                         {/* Jabatan */}
-                        <p className="text-xs text-muted-foreground">Jabatan: {r.worker?.jabatan || '-'}</p>
+                        <p className="text-xs text-muted-foreground">{t('simulate.jabatan')}: {r.worker?.jabatan || '-'}</p>
 
                         {/* APD Status */}
                         {(() => {
@@ -498,16 +501,16 @@ export default function Simulate() {
                             return (
                               <div className="flex items-center gap-1">
                                 <AlertTriangle className="h-3 w-3 text-destructive" />
-                                <Badge variant="destructive" className="text-[10px]">Keluar Tanpa Izin</Badge>
+                                <Badge variant="destructive" className="text-[10px]">{t('simulate.exitNoPermission')}</Badge>
                               </div>
                             );
                           }
                           return (
                             <div className="flex items-center gap-1">
                               {hasPpeViolation ? (
-                                <><AlertTriangle className="h-3 w-3 text-destructive" /><Badge variant="destructive" className="text-[10px]">APD Tidak Lengkap</Badge></>
+                                <><AlertTriangle className="h-3 w-3 text-destructive" /><Badge variant="destructive" className="text-[10px]">{t('simulate.apdIncomplete')}</Badge></>
                               ) : (
-                                <><ShieldCheck className="h-3 w-3 text-green-600" /><Badge className="text-[10px] bg-green-600 hover:bg-green-700">APD Lengkap</Badge></>
+                                <><ShieldCheck className="h-3 w-3 text-green-600" /><Badge className="text-[10px] bg-green-600 hover:bg-green-700">{t('simulate.apdComplete')}</Badge></>
                               )}
                             </div>
                           );
@@ -515,7 +518,7 @@ export default function Simulate() {
 
                         {/* PPE Checklist - show all 5 items */}
                         {r.jenisPelanggaran === 'KELUAR_TANPA_IZIN' ? (
-                          <p className="text-xs text-destructive ml-4">Tidak Ada Izin</p>
+                          <p className="text-xs text-destructive ml-4">{t('simulate.noPermission')}</p>
                         ) : (
                           <div className="flex flex-wrap gap-1 ml-4">
                             {ALL_PPE_ITEMS.map(item => {
@@ -524,14 +527,14 @@ export default function Simulate() {
                                 // Not checked by zone rules
                                 return (
                                   <Badge key={item} variant="secondary" className="text-[9px] gap-0.5 opacity-60">
-                                    {ppeLabel[item] || item} —
+                                    {ppeLabel(item)} —
                                   </Badge>
                                 );
                               }
                               return (
                                 <Badge key={item} variant={result.detected ? 'default' : 'destructive'} className="text-[9px] gap-0.5">
                                   {result.detected ? <ShieldCheck className="h-2.5 w-2.5" /> : <ShieldAlert className="h-2.5 w-2.5" />}
-                                  {ppeLabel[item] || item}
+                                  {ppeLabel(item)}
                                 </Badge>
                               );
                             })}
