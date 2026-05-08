@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +22,7 @@ interface EnrollFaceDialogProps {
 }
 
 export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialogProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [files, setFiles] = useState<File[]>([]);
@@ -99,11 +101,11 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
       setProgress(90);
       setResults(data.results || []);
       setProgress(100);
-      toast({ title: 'Enrollment selesai', description: `${data.results?.filter((r: any) => r.face_id).length} wajah berhasil didaftarkan` });
+      toast({ title: t('enroll.enrollDone'), description: t('enroll.enrollDoneDesc', { count: data.results?.filter((r: any) => r.face_id).length }) });
       qc.invalidateQueries({ queryKey: ['workers'] });
       qc.invalidateQueries({ queryKey: ['face-embeddings', worker.id] });
     } catch (e: any) {
-      toast({ title: 'Error enrollment', description: e.message, variant: 'destructive' });
+      toast({ title: t('enroll.errEnroll'), description: e.message, variant: 'destructive' });
     } finally {
       setEnrolling(false);
     }
@@ -118,11 +120,11 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
         worker_id: worker.id,
         cosmos_face_id: emb.face_id,
       });
-      toast({ title: 'Wajah dihapus', description: `Face ID ${emb.face_id} berhasil dihapus dari Cosmos` });
+      toast({ title: t('enroll.faceDeleted'), description: t('enroll.faceDeletedDesc', { id: emb.face_id }) });
       qc.invalidateQueries({ queryKey: ['workers'] });
       qc.invalidateQueries({ queryKey: ['face-embeddings', worker.id] });
     } catch (e: any) {
-      toast({ title: 'Error hapus wajah', description: e.message, variant: 'destructive' });
+      toast({ title: t('enroll.errDelete'), description: e.message, variant: 'destructive' });
     } finally {
       setDeleting(null);
     }
@@ -143,17 +145,17 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
-            Daftarkan Wajah — {worker?.nama}
+            {t('enroll.title', { name: worker?.nama })}
           </DialogTitle>
           <DialogDescription>
-            Upload 1–3 foto wajah pekerja untuk didaftarkan ke sistem pengenalan wajah Cosmos.
+            {t('enroll.desc')}
           </DialogDescription>
         </DialogHeader>
 
         {/* Existing embeddings */}
         {embeddings.length > 0 && (
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Wajah Terdaftar ({embeddings.length})</Label>
+            <Label className="text-sm font-medium">{t('enroll.registered', { count: embeddings.length })}</Label>
             <div className="space-y-1">
               {embeddings.map((emb) => (
                 <div key={emb.id} className="flex items-center justify-between rounded border p-2 text-xs">
@@ -182,7 +184,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
 
         {/* File input */}
         <div className="grid gap-2">
-          <Label>Foto Wajah</Label>
+          <Label>{t('enroll.facePhoto')}</Label>
           <Input
             type="file"
             accept="image/*"
@@ -190,7 +192,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
             disabled={enrolling}
             onChange={(e) => setFiles(Array.from(e.target.files || []).slice(0, 3))}
           />
-          <p className="text-xs text-muted-foreground">Maksimal 3 foto, format JPG/PNG. Ukuran maks. 2 MB per foto</p>
+          <p className="text-xs text-muted-foreground">{t('enroll.fileHint')}</p>
         </div>
 
         {/* Progress */}
@@ -198,7 +200,7 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
           <div className="space-y-2">
             <Progress value={progress} className="h-2" />
             <p className="text-xs text-muted-foreground text-center">
-              {progress < 50 ? 'Mengupload foto...' : progress < 90 ? 'Mendaftarkan wajah ke Cosmos...' : 'Selesai!'}
+              {progress < 50 ? t('enroll.uploading') : progress < 90 ? t('enroll.registering') : t('enroll.done')}
             </p>
           </div>
         )}
@@ -209,17 +211,17 @@ export function EnrollFaceDialog({ worker, open, onOpenChange }: EnrollFaceDialo
             {results.map((r, i) => (
               <div key={i} className="flex items-center gap-2 text-sm">
                 {r.face_id ? <CheckCircle className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-destructive" />}
-                <span>{r.face_id ? `Terdaftar (ID: ${r.face_id})` : r.error || 'Gagal'}</span>
+                <span>{r.face_id ? t('enroll.registeredFmt', { id: r.face_id }) : r.error || t('enroll.failed')}</span>
               </div>
             ))}
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleClose(false)} disabled={enrolling}>Tutup</Button>
+          <Button variant="outline" onClick={() => handleClose(false)} disabled={enrolling}>{t('common.close')}</Button>
           <Button onClick={handleEnroll} disabled={enrolling || files.length === 0}>
             {enrolling && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-            Daftarkan Wajah
+            {t('enroll.registerBtn')}
           </Button>
         </DialogFooter>
       </DialogContent>
