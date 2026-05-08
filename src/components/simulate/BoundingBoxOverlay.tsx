@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface BoundingBox {
   Left: number;
@@ -21,6 +22,7 @@ interface BoundingBoxOverlayProps {
 }
 
 export function BoundingBoxOverlay({ imageSrc, persons }: BoundingBoxOverlayProps) {
+  const { t } = useTranslation();
   const boxes = useMemo(() => persons.filter(p => p.boundingBox), [persons]);
 
   return (
@@ -65,7 +67,7 @@ export function BoundingBoxOverlay({ imageSrc, persons }: BoundingBoxOverlayProp
       {boxes.map((person, i) => {
         const bb = person.boundingBox!;
         const colorClass = person.hasViolation ? 'bg-red-500' : 'bg-green-500';
-        const label = `#${person.personIndex} ${person.workerName || 'Tidak Dikenal'}`;
+        const label = `#${person.personIndex} ${person.workerName || t('simulate.unknown')}`;
         return (
           <div
             key={i}
