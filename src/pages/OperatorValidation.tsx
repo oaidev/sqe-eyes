@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { BoundingBoxOverlay } from '@/components/simulate/BoundingBoxOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Search, Download, Activity, AlertTriangle, ShieldCheck, ShieldAlert, Check, ChevronsUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { id as idLocale } from 'date-fns/locale';
+import { id as idLocale, enUS as enLocale } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
 const PPE_LABELS: Record<string, string> = {
@@ -78,6 +79,8 @@ interface EventRow {
 }
 
 export default function OperatorValidation() {
+  const { t, i18n } = useTranslation();
+  const dfLocale = i18n.language === 'en' ? enLocale : idLocale;
   const { toast } = useToast();
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -208,7 +211,7 @@ export default function OperatorValidation() {
     mutationFn: async () => {
       if (!selectedEvent || !user) return;
       const alert = selectedEvent.alerts?.[0];
-      if (!alert) throw new Error('Tidak ada alert untuk event ini');
+      if (!alert) throw new Error(t('validation.errNoAlert'));
 
       if (reviseSid && reviseSid !== '__none__') {
         await supabase.from('events').update({ worker_id: reviseSid } as any).eq('id', selectedEvent.id);
@@ -226,23 +229,23 @@ export default function OperatorValidation() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: 'Validasi disimpan' });
+      toast({ title: t('validation.saved') });
       qc.invalidateQueries({ queryKey: ['operator-validations'] });
       qc.invalidateQueries({ queryKey: ['operator-events'] });
       qc.invalidateQueries({ queryKey: ['profiles-validators'] });
       setSelectedEvent(null);
     },
-    onError: (e: Error) => toast({ title: 'Error', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: t('common.error'), description: e.message, variant: 'destructive' }),
   });
 
   const exportExcel = () => {
-    const headers = ['Tanggal', 'Pekerja', 'SID', 'Kamera', 'Zona', 'Status', 'Jenis Pelanggaran'];
+    const headers = [t('validation.table.datetime'), t('validation.table.worker'), 'SID', t('validation.table.camera'), t('validation.table.zone'), t('validation.table.status'), t('validation.table.violationType')];
     const rows = filtered.map(e => {
       const jp = getEventJenisPelanggaran(e);
-      const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === jp)?.label || jp || '-';
+      const jpLabel = jp ? t(`validation.violationTypes.${jp}`, { defaultValue: jp }) : '-';
       return [
         format(new Date(e.detected_at), 'dd/MM/yyyy HH:mm'),
-        e.workers?.nama || 'Tidak Dikenal', e.workers?.sid || '-',
+        e.workers?.nama || t('validation.unknown'), e.workers?.sid || '-',
         e.cameras?.name || '-', e.cameras?.zones?.name || '-',
         getEventStatus(e), jpLabel,
       ];
@@ -256,9 +259,9 @@ export default function OperatorValidation() {
 
   const statusBadge = (status: string) => {
     switch (status) {
-      case 'VALID': return <Badge variant="destructive">Valid</Badge>;
-      case 'TIDAK_VALID': return <Badge variant="outline">Tidak Valid</Badge>;
-      case 'BARU': return <Badge variant="outline">Baru</Badge>;
+      case 'VALID': return <Badge variant="destructive">{t('validation.valid')}</Badge>;
+      case 'TIDAK_VALID': return <Badge variant="outline">{t('validation.invalid')}</Badge>;
+      case 'BARU': return <Badge variant="outline">{t('validation.new')}</Badge>;
       default: return <Badge variant="secondary">-</Badge>;
     }
   };
@@ -280,11 +283,11 @@ export default function OperatorValidation() {
   const selectedWorkerForRevision = allWorkers.find((w: any) => w.id === reviseSid);
 
   return (
-    <AppLayout title="Validasi Operator">
+    <AppLayout title={t('validation.operatorTitle')}>
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Alert</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Total Pelanggaran</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{totalViolations}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{t('validation.totalAlerts')}</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><Activity className="h-5 w-5 text-primary" />{filtered.length}</div></CardContent></Card>
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{t('validation.totalViolations')}</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />{totalViolations}</div></CardContent></Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -297,46 +300,46 @@ export default function OperatorValidation() {
           <Input type="date" value={dateTo} onChange={e => {
             const val = e.target.value;
             if (val < dateFrom) {
-              toast({ title: 'Tanggal akhir harus sama atau lebih besar dari tanggal awal', variant: 'destructive' });
+              toast({ title: t('validation.errDateRange'), variant: 'destructive' });
               return;
             }
             setDateTo(val);
           }} className="w-[150px]" />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Cari SID/Nama..." value={searchSid} onChange={e => setSearchSid(e.target.value)} className="pl-8 w-[160px]" />
+            <Input placeholder={t('validation.searchPlaceholder')} value={searchSid} onChange={e => setSearchSid(e.target.value)} className="pl-8 w-[160px]" />
           </div>
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[130px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-[130px]"><SelectValue placeholder={t('validation.table.status')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="BARU">Baru</SelectItem>
-              <SelectItem value="VALID">Valid</SelectItem>
-              <SelectItem value="TIDAK_VALID">Tidak Valid</SelectItem>
+              <SelectItem value="all">{t('validation.allStatus')}</SelectItem>
+              <SelectItem value="BARU">{t('validation.new')}</SelectItem>
+              <SelectItem value="VALID">{t('validation.valid')}</SelectItem>
+              <SelectItem value="TIDAK_VALID">{t('validation.invalid')}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={filterZone} onValueChange={setFilterZone}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Zona" /></SelectTrigger>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder={t('validation.table.zone')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Zona</SelectItem>
+              <SelectItem value="all">{t('validation.allZones')}</SelectItem>
               {zones.map((z: any) => <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filterCamera} onValueChange={setFilterCamera}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Kamera" /></SelectTrigger>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder={t('validation.table.camera')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Kamera</SelectItem>
+              <SelectItem value="all">{t('validation.allCameras')}</SelectItem>
               {cameras.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filterJenisPelanggaran} onValueChange={setFilterJenisPelanggaran}>
-            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Jenis Pelanggaran" /></SelectTrigger>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder={t('validation.table.violationType')} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Jenis</SelectItem>
-              {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              <SelectItem value="all">{t('validation.allTypes')}</SelectItem>
+              {JENIS_PELANGGARAN_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{t(`validation.violationTypes.${o.value}`)}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={exportExcel}><Download className="mr-1 h-4 w-4" />Export CSV</Button>
+          <Button variant="outline" size="sm" onClick={exportExcel}><Download className="mr-1 h-4 w-4" />{t('validation.exportCsv')}</Button>
         </div>
 
         <Card>
@@ -344,27 +347,27 @@ export default function OperatorValidation() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Tanggal & Waktu</TableHead>
-                  <TableHead>Pekerja</TableHead>
-                  <TableHead>Kamera</TableHead>
-                  <TableHead>Zona</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Jenis Pelanggaran</TableHead>
+                  <TableHead>{t('validation.table.datetime')}</TableHead>
+                  <TableHead>{t('validation.table.worker')}</TableHead>
+                  <TableHead>{t('validation.table.camera')}</TableHead>
+                  <TableHead>{t('validation.table.zone')}</TableHead>
+                  <TableHead>{t('validation.table.status')}</TableHead>
+                  <TableHead>{t('validation.table.violationType')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" /></TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Tidak ada alert</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">{t('validation.empty')}</TableCell></TableRow>
                 ) : filtered.map(e => {
                   const jp = getEventJenisPelanggaran(e);
-                  const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === jp)?.label || '-';
+                  const jpLabel = jp ? t(`validation.violationTypes.${jp}`, { defaultValue: '-' }) : '-';
                   return (
                     <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openEventDialog(e)}>
-                      <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</TableCell>
+                      <TableCell className="text-xs">{format(new Date(e.detected_at), 'dd MMM yyyy HH:mm', { locale: dfLocale })}</TableCell>
                       <TableCell className="font-medium text-sm">
-                        {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">Tidak Dikenal</span>}
+                        {e.workers ? <span>{e.workers.sid} - {e.workers.nama}</span> : <span className="text-destructive">{t('validation.unknown')}</span>}
                       </TableCell>
                       <TableCell className="text-sm">{e.cameras?.name || '-'}</TableCell>
                       <TableCell className="text-sm">{e.cameras?.zones?.name || '-'}</TableCell>
@@ -383,35 +386,36 @@ export default function OperatorValidation() {
       <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detail Alert</DialogTitle>
-            <DialogDescription>Lihat detail dan lakukan validasi</DialogDescription>
+            <DialogTitle>{t('validation.detail')}</DialogTitle>
+            <DialogDescription>{t('validation.detailDesc')}</DialogDescription>
           </DialogHeader>
           {selectedEvent && (() => {
             const alertId = selectedEvent.alerts?.[0]?.id;
             const existingValidation = alertId ? validationMap[alertId] : null;
             const isValidated = !!existingValidation;
-            const jpLabel = JENIS_PELANGGARAN_OPTIONS.find(o => o.value === (existingValidation?.jenis_pelanggaran || selectedEvent.cameras?.jenis_pelanggaran))?.label || selectedEvent.cameras?.jenis_pelanggaran || '-';
+            const jpVal = existingValidation?.jenis_pelanggaran || selectedEvent.cameras?.jenis_pelanggaran;
+            const jpLabel = jpVal ? t(`validation.violationTypes.${jpVal}`, { defaultValue: jpVal }) : '-';
 
             return (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-muted-foreground">Waktu:</span> {format(new Date(selectedEvent.detected_at), 'dd MMM yyyy HH:mm:ss', { locale: idLocale })}</div>
-                <div><span className="text-muted-foreground">Pekerja:</span> {selectedEvent.workers ? `${selectedEvent.workers.sid} - ${selectedEvent.workers.nama}` : 'Tidak Dikenal'}</div>
-                <div><span className="text-muted-foreground">Kamera:</span> {selectedEvent.cameras?.name || '-'}</div>
-                <div><span className="text-muted-foreground">Zona:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
-                <div><span className="text-muted-foreground">Status:</span> {statusBadge(getEventStatus(selectedEvent))}</div>
-                <div><span className="text-muted-foreground">Jenis Pelanggaran:</span> {jpLabel}</div>
+                <div><span className="text-muted-foreground">{t('validation.fields.time')}:</span> {format(new Date(selectedEvent.detected_at), 'dd MMM yyyy HH:mm:ss', { locale: dfLocale })}</div>
+                <div><span className="text-muted-foreground">{t('validation.fields.worker')}:</span> {selectedEvent.workers ? `${selectedEvent.workers.sid} - ${selectedEvent.workers.nama}` : t('validation.unknown')}</div>
+                <div><span className="text-muted-foreground">{t('validation.fields.camera')}:</span> {selectedEvent.cameras?.name || '-'}</div>
+                <div><span className="text-muted-foreground">{t('validation.fields.zone')}:</span> {selectedEvent.cameras?.zones?.name || '-'}</div>
+                <div><span className="text-muted-foreground">{t('validation.fields.status')}:</span> {statusBadge(getEventStatus(selectedEvent))}</div>
+                <div><span className="text-muted-foreground">{t('validation.fields.violationType')}:</span> {jpLabel}</div>
               </div>
 
               {/* PPE Checklist */}
               {Object.keys(ppeResults).length > 0 && (
                 <div>
-                  <Label className="text-sm font-medium">Checklist APD</Label>
+                  <Label className="text-sm font-medium">{t('validation.ppeChecklist')}</Label>
                   <div className="flex flex-wrap gap-2 mt-2">
                     {Object.entries(ppeResults).map(([item, val]: [string, any]) => (
                       <Badge key={item} variant={val?.detected ? 'default' : 'destructive'} className="gap-1">
                         {val?.detected ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
-                        {PPE_LABELS[item] || item}
+                        {t(`validation.ppe.${item}`, { defaultValue: PPE_LABELS[item] || item })}
                       </Badge>
                     ))}
                   </div>
@@ -422,7 +426,7 @@ export default function OperatorValidation() {
               <div className="space-y-3">
                 {selectedEvent.snapshot_url && (
                   <div>
-                    <Label className="text-sm font-medium">Foto Evidence</Label>
+                    <Label className="text-sm font-medium">{t('validation.evidence')}</Label>
                     {selectedEvent.bounding_box ? (
                       <div className="mt-1">
                         <BoundingBoxOverlay
@@ -432,7 +436,7 @@ export default function OperatorValidation() {
                             workerName: selectedEvent.workers?.nama || null,
                             hasViolation: Object.values(selectedEvent.ppe_results || {}).some((v: any) => !v?.detected),
                             ppeStatus: Object.entries(selectedEvent.ppe_results || {})
-                              .map(([k, v]: [string, any]) => `${PPE_LABELS[k] || k} ${v?.detected ? '✓' : '✗'}`)
+                              .map(([k, v]: [string, any]) => `${t(`validation.ppe.${k}`, { defaultValue: PPE_LABELS[k] || k })} ${v?.detected ? '✓' : '✗'}`)
                               .join(', '),
                             personIndex: 1,
                           }]}
@@ -448,15 +452,15 @@ export default function OperatorValidation() {
               {/* Show validation info after saved */}
               {isValidated && existingValidation && (
                 <div className="bg-muted rounded-lg p-3 text-sm border-t">
-                  <p className="font-medium mb-2">Hasil Validasi Operator</p>
+                  <p className="font-medium mb-2">{t('validation.operatorResult')}</p>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><span className="text-muted-foreground">Status:</span> {statusBadge(existingValidation.status)}</div>
-                    <div><span className="text-muted-foreground">Alasan:</span> {ALASAN_LABELS[existingValidation.alasan_type || ''] || existingValidation.alasan_type || '-'}</div>
+                    <div><span className="text-muted-foreground">{t('validation.fields.status')}:</span> {statusBadge(existingValidation.status)}</div>
+                    <div><span className="text-muted-foreground">{t('validation.alasan')}:</span> {existingValidation.alasan_type ? t(`validation.alasanLabels.${existingValidation.alasan_type}`, { defaultValue: existingValidation.alasan_type }) : '-'}</div>
                     {existingValidation.alasan_text && (
-                      <div className="col-span-2"><span className="text-muted-foreground">Detail Alasan:</span> {existingValidation.alasan_text}</div>
+                      <div className="col-span-2"><span className="text-muted-foreground">{t('validation.alasanDetail')}:</span> {existingValidation.alasan_text}</div>
                     )}
-                    <div><span className="text-muted-foreground">Divalidasi oleh:</span> {profileMap[existingValidation.supervisor_id] || '-'}</div>
-                    <div><span className="text-muted-foreground">Waktu validasi:</span> {format(new Date(existingValidation.created_at), 'dd MMM yyyy HH:mm', { locale: idLocale })}</div>
+                    <div><span className="text-muted-foreground">{t('validation.validatedBy')}:</span> {profileMap[existingValidation.supervisor_id] || '-'}</div>
+                    <div><span className="text-muted-foreground">{t('validation.validatedAt')}:</span> {format(new Date(existingValidation.created_at), 'dd MMM yyyy HH:mm', { locale: dfLocale })}</div>
                   </div>
                 </div>
               )}
@@ -464,26 +468,26 @@ export default function OperatorValidation() {
               {/* Validation form - only show when not yet validated */}
               {selectedEvent.alerts?.[0] && !isValidated && (
                 <div className="border-t pt-4 space-y-3">
-                  <Label className="font-medium">Validasi Manual</Label>
+                  <Label className="font-medium">{t('validation.manualValidation')}</Label>
                   <div className="grid gap-3">
                     <div className="grid gap-2">
-                      <Label className="text-sm">Revisi SID (Opsional)</Label>
+                      <Label className="text-sm">{t('validation.reviseSid')}</Label>
                       <Popover open={sidPopoverOpen} onOpenChange={setSidPopoverOpen}>
                         <PopoverTrigger asChild>
                           <Button variant="outline" role="combobox" aria-expanded={sidPopoverOpen} className="justify-between w-full font-normal">
-                            {reviseSid === '__none__' ? 'Tidak ada revisi' : selectedWorkerForRevision ? `${selectedWorkerForRevision.sid} - ${selectedWorkerForRevision.nama}` : 'Pilih pekerja...'}
+                            {reviseSid === '__none__' ? t('validation.noRevision') : selectedWorkerForRevision ? `${selectedWorkerForRevision.sid} - ${selectedWorkerForRevision.nama}` : t('validation.selectWorker')}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-[400px] p-0" align="start">
                           <Command>
-                            <CommandInput placeholder="Cari SID atau Nama..." />
+                            <CommandInput placeholder={t('validation.searchSidName')} />
                             <CommandList>
-                              <CommandEmpty>Tidak ditemukan</CommandEmpty>
+                              <CommandEmpty>{t('validation.notFound')}</CommandEmpty>
                               <CommandGroup>
                                 <CommandItem value="__none__" onSelect={() => { setReviseSid('__none__'); setSidPopoverOpen(false); }}>
                                   <Check className={cn("mr-2 h-4 w-4", reviseSid === '__none__' ? "opacity-100" : "opacity-0")} />
-                                  Tidak ada revisi
+                                  {t('validation.noRevision')}
                                 </CommandItem>
                                 {allWorkers.map((w: any) => (
                                   <CommandItem key={w.id} value={`${w.sid} ${w.nama}`} onSelect={() => { setReviseSid(w.id); setSidPopoverOpen(false); }}>
@@ -498,28 +502,28 @@ export default function OperatorValidation() {
                       </Popover>
                     </div>
                     <div className="grid gap-2">
-                      <Label className="text-sm">Status Validasi</Label>
+                      <Label className="text-sm">{t('validation.validationStatus')}</Label>
                       <Select value={validationStatus} onValueChange={v => { setValidationStatus(v as any); const opts = getAlasanOptions(jenisPelanggaran, v); setAlasanType(opts[0]?.value || 'LAINNYA'); }}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="VALID">Valid</SelectItem>
-                          <SelectItem value="TIDAK_VALID">Tidak Valid</SelectItem>
+                          <SelectItem value="VALID">{t('validation.valid')}</SelectItem>
+                          <SelectItem value="TIDAK_VALID">{t('validation.invalid')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="grid gap-2">
-                      <Label className="text-sm">Alasan</Label>
+                      <Label className="text-sm">{t('validation.alasan')}</Label>
                       <Select value={alasanType} onValueChange={setAlasanType}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {alasanOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                          {alasanOptions.map(o => <SelectItem key={o.value} value={o.value}>{t(`validation.alasanLabels.${o.value}`, { defaultValue: o.label })}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
                     {alasanType === 'LAINNYA' && (
                       <div className="grid gap-2">
-                        <Label className="text-sm">Alasan Lainnya</Label>
-                        <Textarea value={alasanText} onChange={e => setAlasanText(e.target.value)} placeholder="Tulis alasan..." />
+                        <Label className="text-sm">{t('validation.alasanLainnya')}</Label>
+                        <Textarea value={alasanText} onChange={e => setAlasanText(e.target.value)} placeholder={t('validation.alasanPlaceholder')} />
                       </div>
                     )}
                   </div>
@@ -529,11 +533,11 @@ export default function OperatorValidation() {
             );
           })()}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedEvent(null)}>Tutup</Button>
+            <Button variant="outline" onClick={() => setSelectedEvent(null)}>{t('common.close')}</Button>
             {selectedEvent?.alerts?.[0] && getEventStatus(selectedEvent) === 'BARU' && (
               <Button onClick={() => submitValidation.mutate()} disabled={submitValidation.isPending}>
                 {submitValidation.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                Simpan Validasi
+                {t('validation.saveValidation')}
               </Button>
             )}
           </DialogFooter>
