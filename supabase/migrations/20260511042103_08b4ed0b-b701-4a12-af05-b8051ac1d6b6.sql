@@ -1,0 +1,2 @@
+UPDATE events SET detected_at = (DATE '2026-05-10' + (detected_at - DATE_TRUNC('day', detected_at))) WHERE detected_at >= DATE '2026-05-11' AND detected_at < DATE '2026-05-12';
+UPDATE alerts SET created_at = (DATE '2026-05-10' + (created_at - DATE_TRUNC('day', created_at))), updated_at = (DATE '2026-05-10' + (updated_at - DATE_TRUNC('day', updated_at))) WHERE created_at >= DATE '2026-05-11' AND created_at < DATE '2026-05-12';
