@@ -1,43 +1,52 @@
-# Plan: Export all COSMOS UI pages as high-res PNGs
 
-Capture every authenticated page in the app at a high-resolution desktop viewport and save the PNGs to `/mnt/documents/` so you can download them and drop into Figma as references.
+# Capture remaining COSMOS pages in Indonesian (with populated dashboard charts)
 
-## Pages to capture
+Continue the screenshot series in `id` locale at **1920×1080** and save to `/mnt/documents/cosmos-ui/`. The dashboard already has 380 alerts in the database, but **0 fall within the last 7 days**, so the charts render empty. Plan below seeds realistic 7-day data so designers see the filled state.
 
-1. `/auth` — Sign in (logged-out, no auth needed)
-2. `/` — Dashboard
-3. `/workers` — Workers list
-4. `/zones` — Zones & Cameras
-5. `/users` — User management
-6. `/roles` — Roles & Permissions
-7. `/simulate` — Detection Simulation
-8. `/operator-validation` — Operator validation queue
-9. `/supervisor-validation` — Supervisor validation queue
-10. `/404` — Not Found page
+## Pages to capture (in this order)
 
-Optional extras (open dialogs/modals) if you want them too:
-- Worker create dialog, CSV import dialog, Face enroll dialog
-- Zone create dialog with PPE matrix
-- User invite dialog
+| # | Route | File |
+|---|---|---|
+| 02 | `/` | `02-dashboard-id.png` |
+| 03 | `/workers` | `03-workers-id.png` |
+| 04 | `/zones` | `04-zones-id.png` |
+| 05 | `/users` | `05-users-id.png` |
+| 06 | `/roles` | `06-roles-id.png` |
+| 07 | `/simulate` | `07-simulate-id.png` |
+| 08 | `/operator-validation` | `08-operator-validation-id.png` |
+| 09 | `/supervisor-validation` | `09-supervisor-validation-id.png` |
+| 10 | `/404` (via `/this-route-doesnt-exist`) | `10-not-found-id.png` |
 
-## Approach
+Language toggle stays on **ID** for the whole run (already set from the previous capture).
 
-1. Use `browser--navigate_to_sandbox` at viewport **1920×1200** (high-res desktop) for each route.
-2. For authenticated pages, you must already be logged in inside the preview — I'll verify on first navigation; if I hit `/auth`, I'll stop and ask you to sign in.
-3. For each route: navigate → wait for content → `browser--screenshot` → save as `/mnt/documents/cosmos-ui/<page>.png`.
-4. After capture, present each PNG via `<lov-artifact>` so you can preview/download.
+## Populating the dashboard charts
 
-## Output
+Goal: all three 7-day stacked bar charts on `/` show varied, realistic bars across every day so the layout is fully exercised.
 
-A folder of PNGs at `/mnt/documents/cosmos-ui/`, one per page, named e.g. `01-auth.png`, `02-dashboard.png`, etc. Both Indonesian and English versions are possible — by default I'll capture in the **current language** set in the preview. Tell me if you also want a parallel set in the other language (would double the screenshot count).
+Approach — temporary, reversible data seeding:
 
-## Notes / limits
+1. **Backdate ~70 existing alerts** by spreading `created_at` evenly across the last 7 days (10/day), with a healthy mix of `APD_VIOLATION`, `UNKNOWN_PERSON`, and `UNAUTHORIZED_EXIT` types so all three charts are populated.
+2. **Insert ~40 `supervisor_validations`** rows tied to a subset of those alerts, mixing `VALID` and `TIDAK_VALID` statuses, leaving the remainder un-validated. This makes every stack segment (sudah/belum, valid/tidak_valid/belum) visible.
+3. Capture the dashboard screenshot.
+4. **Revert the seed**: restore original `created_at` values from a snapshot table and delete the inserted validations, leaving the database exactly as it was.
 
-- Screenshots are bitmap references, not editable Figma components — you'll still need html.to.design or manual rebuild for editable layers.
-- Pages with empty states will show empty states; pages with data will show whatever's currently in the database.
-- Modals/dialogs require a click to open — only included if you confirm you want them.
+The seed script will:
+- First snapshot the affected alerts to a temp table `_chart_seed_backup` (id + original created_at).
+- Apply the backdating + insert validations.
+- Take screenshots.
+- Restore from `_chart_seed_backup` and drop it.
 
-## Questions before I run
+## Steps
 
-- Capture **only the main pages**, or also **dialogs/modals**?
-- Capture **current language only**, or **both ID + EN**?
+1. Snapshot + seed the dashboard data (one SQL transaction).
+2. Navigate to `/` (already authenticated, viewport 1920×1080, language = ID), screenshot, save as `02-dashboard-id.png`.
+3. For each remaining route: navigate → screenshot → save with the matching filename.
+4. Restore the dashboard data from the snapshot (one SQL transaction) and drop the temp table.
+5. Hand back the full `/mnt/documents/cosmos-ui/` set as `<lov-artifact>` tags (each PNG individually).
+
+## Notes
+
+- Modals/dialogs and EN versions are out of scope for this run — happy to follow up.
+- The `/404` page will be captured by navigating to a deliberately invalid route.
+- If any protected route bounces to `/auth`, I'll stop and ask you to re-sign-in.
+- All seeded data is fully reverted; nothing permanent is written.
