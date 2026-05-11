@@ -1,53 +1,43 @@
-## Toggle Bahasa ID ↔ EN (Full i18n)
+# Plan: Export all COSMOS UI pages as high-res PNGs
 
-### Pendekatan
-Gunakan **react-i18next** dengan `i18next-browser-languagedetector` (localStorage). Default: Indonesian. Toggle switch di header (kanan atas).
+Capture every authenticated page in the app at a high-resolution desktop viewport and save the PNGs to `/mnt/documents/` so you can download them and drop into Figma as references.
 
-### File baru
-- `src/i18n/index.ts` — inisialisasi i18next, detector localStorage, fallback `id`
-- `src/i18n/locales/id.json` — semua string ID (key per halaman: `common`, `sidebar`, `auth`, `dashboard`, `workers`, `zones`, `users`, `roles`, `simulate`, `validation`, `toast`)
-- `src/i18n/locales/en.json` — terjemahan EN
-- `src/components/layout/LanguageToggle.tsx` — switch ID/EN dengan icon Languages, update `i18n.changeLanguage()` + persist localStorage
+## Pages to capture
 
-### File yang dimodifikasi
-- `src/main.tsx` — import `./i18n`
-- `src/components/layout/AppLayout.tsx` — tambah `<LanguageToggle />` di header (kanan, sebelum/ di area kanan header)
-- `src/pages/Auth.tsx` — Auth tidak pakai AppLayout, tambah toggle terpisah di pojok kanan atas
-- Semua halaman & komponen yang punya teks hardcoded:
-  - `src/pages/Auth.tsx`, `Index.tsx`, `Workers.tsx`, `Zones.tsx`, `Users.tsx`, `Roles.tsx`, `Simulate.tsx`, `OperatorValidation.tsx`, `SupervisorValidation.tsx`, `NotFound.tsx`
-  - `src/components/layout/AppSidebar.tsx` (label menu, group)
-  - `src/components/simulate/PpeMatrixDisplay.tsx`, `BoundingBoxOverlay.tsx`, `EnrollFaceDialog.tsx`
-  - `src/components/ui/LoadingScreen.tsx` jika ada teks
-  - `src/lib/validation.ts` — error messages (export key, lookup via t() di pemanggil) ATAU return key string lalu translate di UI
-- `index.html` — `<html lang>` di-set dinamis via i18n (opsional, set di App effect)
+1. `/auth` — Sign in (logged-out, no auth needed)
+2. `/` — Dashboard
+3. `/workers` — Workers list
+4. `/zones` — Zones & Cameras
+5. `/users` — User management
+6. `/roles` — Roles & Permissions
+7. `/simulate` — Detection Simulation
+8. `/operator-validation` — Operator validation queue
+9. `/supervisor-validation` — Supervisor validation queue
+10. `/404` — Not Found page
 
-### Strategi key
-Struktur bertingkat berdasarkan halaman:
-```
-{
-  "common": { "save": "Simpan", "cancel": "Batal", "edit": "Ubah", "delete": "Hapus", "add": "Tambah", "search": "Cari", "loading": "Memuat...", "required": "Wajib diisi", "characters": "karakter" },
-  "sidebar": { "groups": {...}, "items": {...} },
-  "workers": { "title": "Kelola Pekerja", "addWorker": "Tambah Pekerja", "name": "Nama", "sid": "SID", ... },
-  "validation": { "nameInvalid": "Nama hanya boleh mengandung huruf", "emailInvalid": "Format email tidak valid", "sidInvalid": "...", "zoneNameInvalid": "..." },
-  "toast": { "saved": "Tersimpan", "deleted": "Terhapus", "error": "Terjadi kesalahan", ... }
-}
-```
+Optional extras (open dialogs/modals) if you want them too:
+- Worker create dialog, CSV import dialog, Face enroll dialog
+- Zone create dialog with PPE matrix
+- User invite dialog
 
-### Komponen LanguageToggle
-- Dua tombol kecil "ID" / "EN" dengan style toggle (atau Switch + label), pakai `useTranslation()` → `i18n.changeLanguage(lng)`
-- Persist via i18next-browser-languagedetector (localStorage key: `i18nextLng`)
-- Tampilkan di header `AppLayout` rata kanan (gunakan `ml-auto`)
-- Untuk halaman `/auth` yang tidak pakai `AppLayout`, render toggle absolute top-right
+## Approach
 
-### Detail teknis
-- Install: `i18next`, `react-i18next`, `i18next-browser-languagedetector`
-- `useTranslation()` di setiap komponen, ganti string hardcoded → `t('namespace.key')`
-- Untuk pesan validasi di `validation.ts`: ubah agar fungsi return `{ valid, errorKey }` dan UI panggil `t(errorKey)`. Atau lebih ringan: pindahkan pesan error ke pemanggil dan validation.ts hanya return boolean (saat ini mostly boolean — cek isi file)
-- Toast `sonner`/`useToast`: bungkus pesan dengan `t()`
-- Dynamic content dari DB (nama pekerja, zona, role enum) **tidak diterjemahkan** — tetap ditampilkan apa adanya. Tapi label role enum (`super_admin`, `admin`, dll) di sidebar footer & Users page diterjemahkan via map.
+1. Use `browser--navigate_to_sandbox` at viewport **1920×1200** (high-res desktop) for each route.
+2. For authenticated pages, you must already be logged in inside the preview — I'll verify on first navigation; if I hit `/auth`, I'll stop and ask you to sign in.
+3. For each route: navigate → wait for content → `browser--screenshot` → save as `/mnt/documents/cosmos-ui/<page>.png`.
+4. After capture, present each PNG via `<lov-artifact>` so you can preview/download.
 
-### Verifikasi
-- Build pass
-- Toggle di header berfungsi, refresh tetap mempertahankan bahasa
-- Cek 3 halaman sample (Dashboard, Workers, Roles) di EN: tidak ada teks ID tersisa
-- Toast & validation muncul sesuai bahasa aktif
+## Output
+
+A folder of PNGs at `/mnt/documents/cosmos-ui/`, one per page, named e.g. `01-auth.png`, `02-dashboard.png`, etc. Both Indonesian and English versions are possible — by default I'll capture in the **current language** set in the preview. Tell me if you also want a parallel set in the other language (would double the screenshot count).
+
+## Notes / limits
+
+- Screenshots are bitmap references, not editable Figma components — you'll still need html.to.design or manual rebuild for editable layers.
+- Pages with empty states will show empty states; pages with data will show whatever's currently in the database.
+- Modals/dialogs require a click to open — only included if you confirm you want them.
+
+## Questions before I run
+
+- Capture **only the main pages**, or also **dialogs/modals**?
+- Capture **current language only**, or **both ID + EN**?
